@@ -1,0 +1,6 @@
+packages:
+  - apps/*
+  - packages/*
+allowBuilds:
+  # Usado por drizzle-kit e tsx; o script só valida o binário da plataforma.
+  esbuild: true
