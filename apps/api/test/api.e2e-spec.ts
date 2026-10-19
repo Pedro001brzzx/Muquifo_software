@@ -97,6 +97,33 @@ describe.skipIf(!process.env.DATABASE_URL)('API (e2e)', () => {
     expect(res.statusCode).toBe(422);
   });
 
+  it('CORS libera os métodos e headers usados pelo app no navegador', async () => {
+    for (const method of ['PATCH', 'DELETE', 'POST']) {
+      const res = await app.inject({
+        method: 'OPTIONS',
+        url: '/api/v1/orders/x/items/y',
+        headers: {
+          origin: 'http://192.168.0.10:5173',
+          'access-control-request-method': method,
+          'access-control-request-headers': 'content-type,idempotency-key',
+        },
+      });
+      expect(res.statusCode).toBe(204);
+      expect(res.headers['access-control-allow-methods']).toContain(method);
+      expect(res.headers['access-control-allow-headers']).toContain(
+        'idempotency-key',
+      );
+    }
+    const get = await app.inject({
+      method: 'GET',
+      url: '/api/v1/health',
+      headers: { origin: 'http://192.168.0.10:5173' },
+    });
+    expect(get.headers['access-control-expose-headers']).toContain(
+      'idempotent-replayed',
+    );
+  });
+
   it('rota inexistente usa o formato de erro padrão', async () => {
     const res = await inject('GET', '/nao-existe');
     expect(res.statusCode).toBe(404);
