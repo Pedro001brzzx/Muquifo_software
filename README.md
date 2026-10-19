@@ -58,3 +58,6 @@ Libere as portas 3000 e 5173 no firewall do Windows **apenas para redes privadas
 - Erros sempre em `{ code, message, details?, requestId }`; o `requestId` também vai no header `x-request-id`.
 - Concorrência otimista: alterações enviam `version`; versão desatualizada retorna `409 VERSION_CONFLICT`.
 - Validação com os schemas de `@muquifo/contracts` (`422 VALIDATION_FAILED`).
+- Mutações de comandas e pedidos exigem o header `Idempotency-Key` (UUID novo por operação).
+  Reenvio com a mesma chave devolve o resultado original com `Idempotent-Replayed: true`;
+  `GET /operations/{key}` consulta o resultado após um timeout.

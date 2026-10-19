@@ -25,4 +25,11 @@ export const errorCodes = {
   unauthorized: 'UNAUTHORIZED',
   forbidden: 'FORBIDDEN',
   internal: 'INTERNAL_ERROR',
+  idempotencyKeyRequired: 'IDEMPOTENCY_KEY_REQUIRED',
+  idempotencyKeyReused: 'IDEMPOTENCY_KEY_REUSED',
+  tabNotOpen: 'TAB_NOT_OPEN',
+  orderNotEditable: 'ORDER_NOT_EDITABLE',
+  emptyOrder: 'EMPTY_ORDER',
+  productUnavailable: 'PRODUCT_UNAVAILABLE',
+  priceChanged: 'PRICE_CHANGED',
 } as const;

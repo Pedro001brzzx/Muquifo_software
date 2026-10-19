@@ -8,6 +8,20 @@
       "when": 1791947992753,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791993263344,
+      "tag": "0001_ordering",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791993418621,
+      "tag": "0002_order_items_seq",
+      "breakpoints": true
     }
   ]
 }

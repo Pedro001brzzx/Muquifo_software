@@ -1,0 +1,208 @@
+import type {
+  Order,
+  OrderItem,
+  TabDetail,
+  TabStatus,
+  TabSummary,
+} from '@muquifo/contracts';
+import { and, asc, desc, eq, inArray, type SQL, sql } from 'drizzle-orm';
+import { AppException } from '../common/app-exception.js';
+import type { Executor, Transaction } from '../db/client.js';
+import { diningTables, orderItems, orders, tabs } from '../db/schema.js';
+
+type TabRow = typeof tabs.$inferSelect;
+type OrderRow = typeof orders.$inferSelect;
+type OrderItemRow = typeof orderItems.$inferSelect;
+
+const iso = (d: Date | null) => (d ? d.toISOString() : null);
+
+function toItem(row: OrderItemRow): OrderItem {
+  return {
+    id: row.id,
+    orderId: row.orderId,
+    productId: row.productId,
+    productName: row.productName,
+    unitPriceCents: row.unitPriceCents,
+    quantity: row.quantity,
+    totalCents: row.totalCents,
+    sectorId: row.sectorId,
+    notes: row.notes,
+    status: row.status,
+    cancelReason: row.cancelReason,
+    canceledAt: iso(row.canceledAt),
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+const activeTotal = (items: OrderItem[]) =>
+  items
+    .filter((i) => i.status === 'active')
+    .reduce((sum, i) => sum + i.totalCents, 0);
+
+function toOrder(row: OrderRow, items: OrderItem[]): Order {
+  return {
+    id: row.id,
+    number: row.number,
+    tabId: row.tabId,
+    channel: row.channel,
+    status: row.status,
+    notes: row.notes,
+    version: row.version,
+    createdAt: row.createdAt.toISOString(),
+    submittedAt: iso(row.submittedAt),
+    canceledAt: iso(row.canceledAt),
+    cancelReason: row.cancelReason,
+    totalCents: activeTotal(items),
+    items,
+  };
+}
+
+async function loadOrders(db: Executor, where: SQL): Promise<Order[]> {
+  const orderRows = await db
+    .select()
+    .from(orders)
+    .where(where)
+    .orderBy(asc(orders.number));
+  if (orderRows.length === 0) return [];
+  const itemRows = await db
+    .select()
+    .from(orderItems)
+    .where(
+      inArray(
+        orderItems.orderId,
+        orderRows.map((o) => o.id),
+      ),
+    )
+    .orderBy(asc(orderItems.seq));
+  return orderRows.map((o) =>
+    toOrder(o, itemRows.filter((i) => i.orderId === o.id).map(toItem)),
+  );
+}
+
+export async function getOrder(db: Executor, id: string): Promise<Order> {
+  const [order] = await loadOrders(db, eq(orders.id, id));
+  if (!order) throw AppException.notFound('Pedido', id);
+  return order;
+}
+
+/** Itens ativos de pedidos enviados somam na conta; canceladas e rascunhos não. */
+const tabTotals = (db: Executor) =>
+  db
+    .select({
+      tabId: orders.tabId,
+      total: sql<number>`coalesce(sum(${orderItems.totalCents}), 0)::int`.as(
+        'total',
+      ),
+      itemCount: sql<number>`count(${orderItems.id})::int`.as('item_count'),
+    })
+    .from(orders)
+    .innerJoin(
+      orderItems,
+      and(eq(orderItems.orderId, orders.id), eq(orderItems.status, 'active')),
+    )
+    .where(eq(orders.status, 'submitted'))
+    .groupBy(orders.tabId)
+    .as('tab_totals');
+
+async function selectTabs(db: Executor, where?: SQL): Promise<TabSummary[]> {
+  const totals = tabTotals(db);
+  const rows = await db
+    .select({
+      tab: tabs,
+      tableNumber: diningTables.number,
+      totalCents: sql<number>`coalesce(${totals.total}, 0)`,
+      itemCount: sql<number>`coalesce(${totals.itemCount}, 0)`,
+    })
+    .from(tabs)
+    .leftJoin(diningTables, eq(diningTables.id, tabs.tableId))
+    .leftJoin(totals, eq(totals.tabId, tabs.id))
+    .where(where)
+    .orderBy(desc(tabs.openedAt));
+  return rows.map(({ tab, tableNumber, totalCents, itemCount }) => ({
+    id: tab.id,
+    code: tab.code,
+    tableId: tab.tableId,
+    tableNumber,
+    customerName: tab.customerName,
+    status: tab.status,
+    version: tab.version,
+    openedAt: tab.openedAt.toISOString(),
+    closedAt: iso(tab.closedAt),
+    totalCents: Number(totalCents),
+    itemCount: Number(itemCount),
+  }));
+}
+
+export function listTabs(
+  db: Executor,
+  query: { status?: TabStatus; tableId?: string },
+): Promise<TabSummary[]> {
+  const filters: SQL[] = [];
+  if (query.status) filters.push(eq(tabs.status, query.status));
+  if (query.tableId) filters.push(eq(tabs.tableId, query.tableId));
+  return selectTabs(db, and(...filters));
+}
+
+export async function getTab(db: Executor, id: string): Promise<TabDetail> {
+  const [summary] = await selectTabs(db, eq(tabs.id, id));
+  if (!summary) throw AppException.notFound('Comanda', id);
+  const tabOrders = await loadOrders(db, eq(orders.tabId, id));
+  const draftCents = tabOrders
+    .filter((o) => o.status === 'draft')
+    .reduce((sum, o) => sum + o.totalCents, 0);
+  // Pagamentos entram na próxima etapa; até lá o saldo é o total da conta.
+  const paidCents = 0;
+  return {
+    ...summary,
+    draftCents,
+    paidCents,
+    balanceCents: summary.totalCents - paidCents,
+    orders: tabOrders,
+  };
+}
+
+// ---------- Travas de linha ----------
+// Ordem fixa de travamento (comanda → pedido) para evitar deadlock entre operações.
+
+export async function lockTab(tx: Transaction, id: string): Promise<TabRow> {
+  const [row] = await tx
+    .select()
+    .from(tabs)
+    .where(eq(tabs.id, id))
+    .for('update');
+  if (!row) throw AppException.notFound('Comanda', id);
+  return row;
+}
+
+export async function lockOrderWithTab(
+  tx: Transaction,
+  orderId: string,
+): Promise<{ order: OrderRow; tab: TabRow }> {
+  const [ref] = await tx
+    .select({ tabId: orders.tabId })
+    .from(orders)
+    .where(eq(orders.id, orderId));
+  if (!ref) throw AppException.notFound('Pedido', orderId);
+  const tab = await lockTab(tx, ref.tabId);
+  const [order] = await tx
+    .select()
+    .from(orders)
+    .where(eq(orders.id, orderId))
+    .for('update');
+  return { order, tab };
+}
+
+/** Toda alteração de conteúdo da comanda incrementa a versão dela. */
+export async function touchTab(tx: Transaction, id: string): Promise<void> {
+  await tx
+    .update(tabs)
+    .set({ version: sql`${tabs.version} + 1` })
+    .where(eq(tabs.id, id));
+}
+
+export async function touchOrder(tx: Transaction, id: string): Promise<void> {
+  await tx
+    .update(orders)
+    .set({ version: sql`${orders.version} + 1` })
+    .where(eq(orders.id, id));
+}
