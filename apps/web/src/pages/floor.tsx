@@ -1,10 +1,18 @@
 import type { DiningTable, TabSummary } from '@muquifo/contracts';
 import { useQuery } from '@tanstack/react-query';
-import { Armchair, Clock, Plus, ShoppingBag, Users } from 'lucide-react';
+import {
+  Armchair,
+  Clock,
+  DoorOpen,
+  Plus,
+  ShoppingBag,
+  Users,
+} from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { api } from '@/api';
 import { PageBody, PageHeader } from '@/components/layout';
+import { ReleaseTableDialog } from '@/components/release-table-dialog';
 import {
   EmptyState,
   OpenTabDialog,
@@ -52,6 +60,7 @@ export function FloorPage() {
   const [filter, setFilter] = useState<Filter>('all');
   const [openFor, setOpenFor] = useState<DiningTable | null | undefined>();
   const [choose, setChoose] = useState<DiningTable | null>(null);
+  const [release, setRelease] = useState<TabSummary | null>(null);
 
   const tabsByTable = useMemo(() => {
     const map = new Map<string, TabSummary[]>();
@@ -128,6 +137,10 @@ export function FloorPage() {
                 table={table}
                 tabs={tabsByTable.get(table.id) ?? []}
                 onClick={() => onTableClick(table)}
+                onRelease={() => {
+                  const tab = tabsByTable.get(table.id)?.[0];
+                  if (tab) setRelease(tab);
+                }}
               />
             ))}
           </div>
@@ -161,6 +174,8 @@ export function FloorPage() {
           </section>
         )}
       </PageBody>
+
+      <ReleaseTableDialog tab={release} onClose={() => setRelease(null)} />
 
       <OpenTabDialog
         table={openFor ?? null}
@@ -218,87 +233,103 @@ function TableCard({
   table,
   tabs,
   onClick,
+  onRelease,
 }: {
   table: DiningTable;
   tabs: TabSummary[];
   onClick: () => void;
+  onRelease: () => void;
 }) {
   const free = table.status === 'free';
   const total = tabs.reduce((sum, t) => sum + t.totalCents, 0);
   const items = tabs.reduce((sum, t) => sum + t.itemCount, 0);
   const since = tabs.map((t) => t.openedAt).sort()[0];
+  // Mesa aberta e deixada ocupada sem nada enviado: atalho para liberar (com confirmação).
+  const releasable = !free && tabs.length === 1 && total === 0 && items === 0;
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'group relative flex min-h-36 flex-col overflow-hidden rounded-xl border bg-card p-4 text-left shadow-xs transition',
-        'hover:-translate-y-0.5 hover:shadow-md focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
-        free ? 'hover:border-free/50' : 'border-busy/30 hover:border-busy/60',
-        table.status === 'closing' && 'border-closing/40',
-      )}
-    >
-      <span
+    <div className="relative">
+      <button
+        type="button"
+        onClick={onClick}
         className={cn(
-          'absolute inset-x-0 top-0 h-1',
-          tableStatusColor[table.status],
+          'group relative flex size-full min-h-36 flex-col overflow-hidden rounded-xl border bg-card p-4 text-left shadow-xs transition',
+          'hover:-translate-y-0.5 hover:shadow-md focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
+          free ? 'hover:border-free/50' : 'border-busy/30 hover:border-busy/60',
+          table.status === 'closing' && 'border-closing/40',
         )}
-      />
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <div className="text-3xl font-semibold tracking-tight tabular">
-            {tableLabel(table.number)}
+      >
+        <span
+          className={cn(
+            'absolute inset-x-0 top-0 h-1',
+            tableStatusColor[table.status],
+          )}
+        />
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <div className="text-3xl font-semibold tracking-tight tabular">
+              {tableLabel(table.number)}
+            </div>
+            {table.label && (
+              <div className="text-xs text-muted-foreground">{table.label}</div>
+            )}
           </div>
-          {table.label && (
-            <div className="text-xs text-muted-foreground">{table.label}</div>
+          <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+            <span
+              className={cn(
+                'size-2 rounded-full',
+                tableStatusColor[table.status],
+              )}
+            />
+            {tableStatusLabel[table.status]}
+          </span>
+        </div>
+
+        <div className="mt-auto pt-4">
+          {free ? (
+            <div className="flex items-center justify-between text-sm text-muted-foreground">
+              <span className="flex items-center gap-1">
+                {table.seats && (
+                  <>
+                    <Users className="size-3.5" /> {table.seats}
+                  </>
+                )}
+              </span>
+              <span className="flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
+                <Plus className="size-3.5" /> Abrir
+              </span>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <div className="text-lg font-semibold tabular">
+                {formatCents(total)}
+              </div>
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span className="truncate">
+                  {`${tabs.length > 1 ? `${tabs.length} comandas` : `Comanda ${tabs[0]?.code ?? ''}`} · ${items} ${items === 1 ? 'item' : 'itens'}`}
+                </span>
+                {since && !releasable && (
+                  <span className="flex items-center gap-1">
+                    <Clock className="size-3" />
+                    {elapsed(since).replace('há ', '')}
+                  </span>
+                )}
+              </div>
+            </div>
           )}
         </div>
-        <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-          <span
-            className={cn(
-              'size-2 rounded-full',
-              tableStatusColor[table.status],
-            )}
-          />
-          {tableStatusLabel[table.status]}
-        </span>
-      </div>
-
-      <div className="mt-auto pt-4">
-        {free ? (
-          <div className="flex items-center justify-between text-sm text-muted-foreground">
-            <span className="flex items-center gap-1">
-              {table.seats && (
-                <>
-                  <Users className="size-3.5" /> {table.seats}
-                </>
-              )}
-            </span>
-            <span className="flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
-              <Plus className="size-3.5" /> Abrir
-            </span>
-          </div>
-        ) : (
-          <div className="space-y-1">
-            <div className="text-lg font-semibold tabular">
-              {formatCents(total)}
-            </div>
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span className="truncate">
-                {`${tabs.length > 1 ? `${tabs.length} comandas` : `Comanda ${tabs[0]?.code ?? ''}`} · ${items} ${items === 1 ? 'item' : 'itens'}`}
-              </span>
-              {since && (
-                <span className="flex items-center gap-1">
-                  <Clock className="size-3" />
-                  {elapsed(since).replace('há ', '')}
-                </span>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-    </button>
+      </button>
+      {releasable && onRelease && (
+        <Button
+          size="xs"
+          variant="outline"
+          className="absolute right-3 bottom-3 bg-card"
+          onClick={onRelease}
+        >
+          <DoorOpen /> Liberar
+        </Button>
+      )}
+    </div>
   );
 }
 

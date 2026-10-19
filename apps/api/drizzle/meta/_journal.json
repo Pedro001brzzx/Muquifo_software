@@ -22,6 +22,13 @@
       "when": 1791993418621,
       "tag": "0002_order_items_seq",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792447609752,
+      "tag": "0003_payments_and_tab_close",
+      "breakpoints": true
     }
   ]
 }

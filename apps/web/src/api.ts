@@ -1,7 +1,10 @@
 import {
   type AddOrderItemInput,
+  type AddPaymentInput,
   type ApiError,
   type CancelOrderInput,
+  type CancelPaymentInput,
+  type CancelTabInput,
   type Category,
   type CreateCategoryInput,
   type CreateDiningTableInput,
@@ -126,6 +129,25 @@ export const api = {
     request<Order>('POST', `/orders/${orderId}/submit`, { version }, idem),
   cancelOrder: (orderId: string, input: CancelOrderInput) =>
     request<Order>('POST', `/orders/${orderId}/cancellations`, input, idem),
+
+  addPayment: (tabId: string, input: AddPaymentInput) =>
+    request<TabDetail>('POST', `/tabs/${tabId}/payments`, input, idem),
+  cancelPayment: (
+    tabId: string,
+    paymentId: string,
+    input: CancelPaymentInput,
+  ) =>
+    request<TabDetail>(
+      'POST',
+      `/tabs/${tabId}/payments/${paymentId}/cancellations`,
+      input,
+      idem,
+    ),
+  closeTab: (tabId: string, version: number) =>
+    request<TabDetail>('POST', `/tabs/${tabId}/close`, { version }, idem),
+  /** Libera a mesa: cancela comanda sem consumo. */
+  cancelTab: (tabId: string, input: CancelTabInput) =>
+    request<TabDetail>('POST', `/tabs/${tabId}/cancellations`, input, idem),
 };
 
 export const queryKeys = {

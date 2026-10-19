@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { paymentSchema } from './billing.js';
 import { centsSchema } from './money.js';
 
 export const tabStatusSchema = z.enum([
@@ -105,9 +106,14 @@ export type Order = z.infer<typeof orderSchema>;
 export const tabDetailSchema = tabSummarySchema.extend({
   /** Itens ativos ainda em rascunho (não enviados à produção). */
   draftCents: centsSchema,
+  /** Soma dos pagamentos ativos. */
   paidCents: centsSchema,
+  /** Total menos pago; negativo se um item foi cancelado depois de pago (estorne o excesso). */
   balanceCents: z.number().int(),
+  cancelReason: z.string().nullable(),
+  canceledAt: z.iso.datetime({ offset: true }).nullable(),
   orders: z.array(orderSchema),
+  payments: z.array(paymentSchema),
 });
 export type TabDetail = z.infer<typeof tabDetailSchema>;
 

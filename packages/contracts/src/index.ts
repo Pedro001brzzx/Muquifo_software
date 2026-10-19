@@ -1,3 +1,4 @@
+export * from './billing.js';
 export * from './catalog.js';
 export * from './money.js';
 export * from './ordering.js';

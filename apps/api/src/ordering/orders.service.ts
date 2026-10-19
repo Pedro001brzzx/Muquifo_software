@@ -12,7 +12,7 @@ import type { z } from 'zod';
 import { AppException } from '../common/app-exception.js';
 import type { Database, Transaction } from '../db/client.js';
 import { DB } from '../db/database.module.js';
-import { orderItems, orders, products, type tabs } from '../db/schema.js';
+import { orderItems, orders, products } from '../db/schema.js';
 import {
   getOrder,
   lockOrderWithTab,
@@ -20,30 +20,10 @@ import {
   touchOrder,
   touchTab,
 } from './ordering.queries.js';
+import { assertTabAccepts } from './tab-rules.js';
 
-type TabRow = typeof tabs.$inferSelect;
 type OrderRow = typeof orders.$inferSelect;
 type ItemInput = z.output<typeof addOrderItemSchema>;
-
-const tabStatusLabel: Record<TabRow['status'], string> = {
-  open: 'aberta',
-  closing: 'em fechamento',
-  closed: 'fechada',
-  canceled: 'cancelada',
-};
-
-function assertTabAccepts(tab: TabRow, action: 'order' | 'cancel'): void {
-  // Comanda em fechamento ainda aceita cancelamentos, mas não novos itens.
-  const allowed = action === 'order' ? ['open'] : ['open', 'closing'];
-  if (!allowed.includes(tab.status)) {
-    throw new AppException(
-      HttpStatus.CONFLICT,
-      errorCodes.tabNotOpen,
-      `Comanda ${tab.code} está ${tabStatusLabel[tab.status]}; a operação não é permitida.`,
-      { tabId: tab.id, status: tab.status },
-    );
-  }
-}
 
 function assertDraft(order: OrderRow): void {
   if (order.status !== 'draft') {
@@ -153,7 +133,8 @@ export class OrdersService {
     input: z.output<typeof cancelOrderSchema>,
   ): Promise<Order> {
     const { order, tab } = await lockOrderWithTab(tx, orderId);
-    assertTabAccepts(tab, 'cancel');
+    // Comanda em fechamento ainda aceita cancelamentos, mas não novos itens.
+    assertTabAccepts(tab, 'settle');
     if (order.status === 'canceled') {
       throw new AppException(
         HttpStatus.CONFLICT,

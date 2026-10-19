@@ -13,6 +13,11 @@ const titles: Record<string, string> = {
   [errorCodes.productUnavailable]: 'Produto indisponível',
   [errorCodes.priceChanged]: 'Preço alterado',
   [errorCodes.idempotencyKeyReused]: 'Operação duplicada',
+  [errorCodes.paymentExceedsBalance]: 'Valor maior que o saldo',
+  [errorCodes.balanceNotZero]: 'Conta com saldo',
+  [errorCodes.draftOrdersPending]: 'Há pedidos em rascunho',
+  [errorCodes.tabEmpty]: 'Comanda sem consumo',
+  [errorCodes.tabHasConsumption]: 'Comanda com consumo',
 };
 
 export function errorTitle(error: unknown): string {

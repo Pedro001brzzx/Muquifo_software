@@ -3,6 +3,7 @@ import { Toaster } from 'sonner';
 import { AppLayout } from '@/components/layout';
 import { useTheme } from '@/components/theme';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { CloseTabPage } from '@/pages/close-tab';
 import { FloorPage } from '@/pages/floor';
 import { RegistryPage } from '@/pages/registry';
 import { TabDetailPage } from '@/pages/tab-detail';
@@ -18,6 +19,7 @@ export function App() {
             <Route index element={<FloorPage />} />
             <Route path="comandas" element={<TabsPage />} />
             <Route path="comandas/:id" element={<TabDetailPage />} />
+            <Route path="comandas/:id/fechar" element={<CloseTabPage />} />
             <Route path="cadastros" element={<RegistryPage />} />
             <Route path="*" element={<FloorPage />} />
           </Route>

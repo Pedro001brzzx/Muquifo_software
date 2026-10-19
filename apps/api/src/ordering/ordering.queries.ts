@@ -1,6 +1,7 @@
 import type {
   Order,
   OrderItem,
+  Payment,
   TabDetail,
   TabStatus,
   TabSummary,
@@ -8,11 +9,18 @@ import type {
 import { and, asc, desc, eq, inArray, type SQL, sql } from 'drizzle-orm';
 import { AppException } from '../common/app-exception.js';
 import type { Executor, Transaction } from '../db/client.js';
-import { diningTables, orderItems, orders, tabs } from '../db/schema.js';
+import {
+  diningTables,
+  orderItems,
+  orders,
+  payments,
+  tabs,
+} from '../db/schema.js';
 
 type TabRow = typeof tabs.$inferSelect;
 type OrderRow = typeof orders.$inferSelect;
 type OrderItemRow = typeof orderItems.$inferSelect;
+type PaymentRow = typeof payments.$inferSelect;
 
 const iso = (d: Date | null) => (d ? d.toISOString() : null);
 
@@ -143,21 +151,80 @@ export function listTabs(
   return selectTabs(db, and(...filters));
 }
 
+function toPayment(row: PaymentRow): Payment {
+  return {
+    id: row.id,
+    tabId: row.tabId,
+    method: row.method,
+    amountCents: row.amountCents,
+    receivedCents: row.receivedCents,
+    changeCents: row.changeCents,
+    status: row.status,
+    cancelReason: row.cancelReason,
+    canceledAt: iso(row.canceledAt),
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
 export async function getTab(db: Executor, id: string): Promise<TabDetail> {
   const [summary] = await selectTabs(db, eq(tabs.id, id));
   if (!summary) throw AppException.notFound('Comanda', id);
-  const tabOrders = await loadOrders(db, eq(orders.tabId, id));
+  const [tabOrders, paymentRows, [cancel]] = await Promise.all([
+    loadOrders(db, eq(orders.tabId, id)),
+    db
+      .select()
+      .from(payments)
+      .where(eq(payments.tabId, id))
+      .orderBy(asc(payments.seq)),
+    db
+      .select({ reason: tabs.cancelReason, at: tabs.canceledAt })
+      .from(tabs)
+      .where(eq(tabs.id, id)),
+  ]);
   const draftCents = tabOrders
     .filter((o) => o.status === 'draft')
     .reduce((sum, o) => sum + o.totalCents, 0);
-  // Pagamentos entram na próxima etapa; até lá o saldo é o total da conta.
-  const paidCents = 0;
+  const tabPayments = paymentRows.map(toPayment);
+  const paidCents = tabPayments
+    .filter((p) => p.status === 'active')
+    .reduce((sum, p) => sum + p.amountCents, 0);
   return {
     ...summary,
     draftCents,
     paidCents,
     balanceCents: summary.totalCents - paidCents,
+    cancelReason: cancel.reason,
+    canceledAt: iso(cancel.at),
     orders: tabOrders,
+    payments: tabPayments,
+  };
+}
+
+/**
+ * Valores da conta calculados dentro da transação, com a comanda já travada:
+ * total enviado, pago, itens ativos em rascunho e pedidos em rascunho.
+ */
+export async function tabBalance(tx: Transaction, tabId: string) {
+  const [row] = await tx
+    .execute<{
+      total: number;
+      paid: number;
+      draft_items: number;
+    }>(sql`
+    select
+      coalesce((select sum(i.total_cents) from ${orderItems} i join ${orders} o on o.id = i.order_id
+        where o.tab_id = ${tabId} and o.status = 'submitted' and i.status = 'active'), 0)::int as total,
+      coalesce((select sum(p.amount_cents) from ${payments} p
+        where p.tab_id = ${tabId} and p.status = 'active'), 0)::int as paid,
+      (select count(*) from ${orderItems} i join ${orders} o on o.id = i.order_id
+        where o.tab_id = ${tabId} and o.status = 'draft' and i.status = 'active')::int as draft_items
+  `)
+    .then((r) => r.rows);
+  return {
+    totalCents: row.total,
+    paidCents: row.paid,
+    balanceCents: row.total - row.paid,
+    draftItems: row.draft_items,
   };
 }
 

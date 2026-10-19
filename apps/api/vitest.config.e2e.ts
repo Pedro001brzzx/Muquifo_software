@@ -1,5 +1,5 @@
 import { defineConfig } from 'vitest/config';
-import { testDatabaseUrl } from './test/test-database';
+import { testDatabaseUrl } from './test/test-database.js';
 
 try {
   process.loadEnvFile();

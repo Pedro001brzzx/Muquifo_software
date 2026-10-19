@@ -133,12 +133,19 @@ export const tabs = pgTable(
       .notNull()
       .defaultNow(),
     closedAt: timestamp('closed_at', { withTimezone: true }),
+    /** Comanda cancelada (mesa liberada sem consumo) guarda motivo e horário (RN05). */
+    cancelReason: text('cancel_reason'),
+    canceledAt: timestamp('canceled_at', { withTimezone: true }),
     ...timestamps,
   },
   (t) => [
     uniqueIndex('tabs_code_uq').on(t.code),
     index('tabs_status_idx').on(t.status),
     index('tabs_table_idx').on(t.tableId),
+    check(
+      'tabs_cancel_reason',
+      sql`${t.status} <> 'canceled' or ${t.cancelReason} is not null`,
+    ),
   ],
 );
 
@@ -203,6 +210,47 @@ export const orderItems = pgTable(
     check('order_items_total_nonnegative', sql`${t.totalCents} >= 0`),
     check(
       'order_items_cancel_reason',
+      sql`${t.status} <> 'canceled' or ${t.cancelReason} is not null`,
+    ),
+  ],
+);
+
+export const paymentMethod = pgEnum('payment_method', [
+  'cash',
+  'credit',
+  'debit',
+  'pix',
+]);
+export const paymentStatus = pgEnum('payment_status', ['active', 'canceled']);
+
+/**
+ * Pagamento manual registrado no caixa (RF07). `amountCents` é o que abate da conta;
+ * em dinheiro, `receivedCents` é o valor entregue e `changeCents` o troco.
+ * Estorno marca como cancelado com motivo; nunca apaga (RN05).
+ */
+export const payments = pgTable(
+  'payments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    seq: integer('seq').notNull().generatedAlwaysAsIdentity(),
+    tabId: uuid('tab_id')
+      .notNull()
+      .references(() => tabs.id, { onDelete: 'restrict' }),
+    method: paymentMethod('method').notNull(),
+    amountCents: integer('amount_cents').notNull(),
+    receivedCents: integer('received_cents'),
+    changeCents: integer('change_cents').notNull().default(0),
+    status: paymentStatus('status').notNull().default('active'),
+    cancelReason: text('cancel_reason'),
+    canceledAt: timestamp('canceled_at', { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    index('payments_tab_idx').on(t.tabId),
+    check('payments_amount_positive', sql`${t.amountCents} > 0`),
+    check('payments_change_nonnegative', sql`${t.changeCents} >= 0`),
+    check(
+      'payments_cancel_reason',
       sql`${t.status} <> 'canceled' or ${t.cancelReason} is not null`,
     ),
   ],

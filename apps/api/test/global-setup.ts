@@ -12,11 +12,20 @@ export default async function setup() {
     // 3D000: banco inexistente; o usuário da aplicação não tem permissão para criá-lo.
     // O Drizzle embrulha o erro do pg em `cause`.
     const e = error as { code?: string; cause?: { code?: string } };
-    if ((e.code ?? e.cause?.code) === '3D000') {
-      const name = new URL(url).pathname.slice(1);
+    const code = e.code ?? e.cause?.code;
+    const name = new URL(url).pathname.slice(1);
+    const user = decodeURIComponent(new URL(url).username);
+    if (code === '3D000') {
       throw new Error(
         `Banco de testes "${name}" não existe. Crie como superusuário (pgAdmin/psql):\n` +
-          `  CREATE DATABASE ${name} OWNER muquifo;`,
+          `  CREATE DATABASE ${name} OWNER ${user};`,
+      );
+    }
+    // 42501: o banco existe mas pertence a outro usuário (criado sem OWNER).
+    if (code === '42501') {
+      throw new Error(
+        `Sem permissão no banco "${name}". Como superusuário, rode:\n` +
+          `  ALTER DATABASE ${name} OWNER TO ${user};`,
       );
     }
     throw error;

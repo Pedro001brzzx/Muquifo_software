@@ -54,6 +54,10 @@ describe.skipIf(!process.env.DATABASE_URL)('Swagger (e2e)', () => {
       '/api/v1/tables',
       '/api/v1/tabs',
       '/api/v1/tabs/{id}',
+      '/api/v1/tabs/{id}/cancellations',
+      '/api/v1/tabs/{id}/close',
+      '/api/v1/tabs/{id}/payments',
+      '/api/v1/tabs/{id}/payments/{paymentId}/cancellations',
     ]);
   });
 
@@ -92,6 +96,10 @@ describe.skipIf(!process.env.DATABASE_URL)('Swagger (e2e)', () => {
       ['/api/v1/orders/{id}/items/{itemId}', 'delete'],
       ['/api/v1/orders/{id}/submit', 'post'],
       ['/api/v1/orders/{id}/cancellations', 'post'],
+      ['/api/v1/tabs/{id}/payments', 'post'],
+      ['/api/v1/tabs/{id}/payments/{paymentId}/cancellations', 'post'],
+      ['/api/v1/tabs/{id}/close', 'post'],
+      ['/api/v1/tabs/{id}/cancellations', 'post'],
     ]) {
       expect(header(path, method), `${method} ${path}`).toHaveLength(1);
       expect(header(path, method)[0].required).toBe(true);

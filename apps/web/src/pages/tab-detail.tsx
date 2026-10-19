@@ -3,8 +3,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   Ban,
+  CheckCircle2,
   Clock,
   CreditCard,
+  DoorOpen,
   Loader2,
   MoreVertical,
   Plus,
@@ -14,17 +16,19 @@ import {
   User,
 } from 'lucide-react';
 import { useState } from 'react';
-import { Link, useParams } from 'react-router';
+import { Link, useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
 import { ApiRequestError, api } from '@/api';
 import { CancelDialog, type CancelTarget } from '@/components/cancel-dialog';
 import { PageBody } from '@/components/layout';
 import { type CartLine, NewOrderSheet } from '@/components/new-order-sheet';
+import { ReleaseTableDialog } from '@/components/release-table-dialog';
 import {
   EmptyState,
   OrderStatusBadge,
   TabStatusBadge,
 } from '@/components/shared';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -36,11 +40,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import { toastError } from '@/lib/errors';
 import {
   clock,
@@ -53,6 +52,7 @@ import { cn } from '@/lib/utils';
 
 export function TabDetailPage() {
   const { id = '' } = useParams();
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const tab = useQuery({
     queryKey: ['tab', id],
@@ -60,6 +60,7 @@ export function TabDetailPage() {
     refetchInterval: 5_000,
   });
   const [orderOpen, setOrderOpen] = useState(false);
+  const [release, setRelease] = useState(false);
   // O carrinho sobrevive a fechar o painel, para o garçom não perder o que montou.
   const [cart, setCart] = useState<CartLine[]>([]);
   const [cancelTarget, setCancelTarget] = useState<CancelTarget | null>(null);
@@ -184,8 +185,8 @@ export function TabDetailPage() {
                 </span>
               )}
               <span className="flex items-center gap-1">
-                <Clock className="size-3.5" /> Aberta às {clock(t.openedAt)} ·{' '}
-                {elapsed(t.openedAt)}
+                <Clock className="size-3.5" /> Aberta às {clock(t.openedAt)}
+                {t.status === 'open' && ` · ${elapsed(t.openedAt)}`}
               </span>
             </div>
           </div>
@@ -200,6 +201,32 @@ export function TabDetailPage() {
 
       <PageBody className="grid gap-6 lg:grid-cols-[1fr_320px] lg:items-start">
         <section className="space-y-4">
+          {t.status === 'closed' && (
+            <Alert>
+              <CheckCircle2 />
+              <AlertTitle>Conta fechada</AlertTitle>
+              <AlertDescription>
+                Encerrada às {t.closedAt && clock(t.closedAt)} ·{' '}
+                {formatCents(t.paidCents)} recebidos.{' '}
+                <Link
+                  to={`/comandas/${t.id}/fechar`}
+                  className="underline underline-offset-2"
+                >
+                  Ver pagamentos
+                </Link>
+              </AlertDescription>
+            </Alert>
+          )}
+          {t.status === 'canceled' && (
+            <Alert variant="destructive">
+              <Ban />
+              <AlertTitle>
+                Comanda cancelada
+                {t.canceledAt && ` às ${clock(t.canceledAt)}`}
+              </AlertTitle>
+              <AlertDescription>{t.cancelReason}</AlertDescription>
+            </Alert>
+          )}
           {orders.length === 0 ? (
             <EmptyState
               icon={ReceiptText}
@@ -267,7 +294,11 @@ export function TabDetailPage() {
                 </Badge>
               )}
             </Button>
-            <CloseTabButton />
+            <SettleActions
+              tab={t}
+              size="lg"
+              onRelease={() => setRelease(true)}
+            />
           </div>
         </aside>
       </PageBody>
@@ -280,20 +311,34 @@ export function TabDetailPage() {
             {formatCents(t.totalCents)}
           </div>
         </div>
-        <Button
-          size="lg"
-          disabled={!editable}
-          onClick={() => setOrderOpen(true)}
-        >
-          <Plus /> Novo pedido
-          {cart.length > 0 && (
-            <Badge variant="secondary" className="ml-1">
-              {cart.length}
-            </Badge>
-          )}
-        </Button>
+        <div className="flex gap-2">
+          <SettleActions
+            tab={t}
+            size="lg"
+            compact
+            onRelease={() => setRelease(true)}
+          />
+          <Button
+            size="lg"
+            disabled={!editable}
+            onClick={() => setOrderOpen(true)}
+          >
+            <Plus /> Pedido
+            {cart.length > 0 && (
+              <Badge variant="secondary" className="ml-1">
+                {cart.length}
+              </Badge>
+            )}
+          </Button>
+        </div>
       </div>
       <div className="h-20 lg:hidden" />
+
+      <ReleaseTableDialog
+        tab={release ? t : null}
+        onClose={() => setRelease(false)}
+        onReleased={() => navigate('/')}
+      />
 
       <NewOrderSheet
         tab={t}
@@ -336,19 +381,35 @@ function Row({
   );
 }
 
-function CloseTabButton() {
+/**
+ * Com consumo: vai para a tela de fechamento. Sem consumo nem pagamento
+ * (mesa aberta por engano): libera a mesa, com confirmação.
+ */
+function SettleActions({
+  tab,
+  size,
+  compact,
+  onRelease,
+}: {
+  tab: TabDetail;
+  size: 'lg';
+  compact?: boolean;
+  onRelease: () => void;
+}) {
+  if (tab.status !== 'open' && tab.status !== 'closing') return null;
+  if (tab.totalCents === 0 && tab.paidCents === 0) {
+    return (
+      <Button variant="outline" size={size} onClick={onRelease}>
+        <DoorOpen /> {compact ? 'Liberar' : 'Liberar mesa'}
+      </Button>
+    );
+  }
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        {/* span: botão desabilitado não dispara o tooltip */}
-        <span tabIndex={0}>
-          <Button variant="outline" size="lg" className="w-full" disabled>
-            <CreditCard /> Fechar conta
-          </Button>
-        </span>
-      </TooltipTrigger>
-      <TooltipContent>Chega na próxima etapa (pagamentos).</TooltipContent>
-    </Tooltip>
+    <Button variant="outline" size={size} asChild>
+      <Link to={`/comandas/${tab.id}/fechar`}>
+        <CreditCard /> {compact ? 'Conta' : 'Fechar conta'}
+      </Link>
+    </Button>
   );
 }
 

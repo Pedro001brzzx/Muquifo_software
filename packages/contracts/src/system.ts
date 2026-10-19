@@ -32,4 +32,9 @@ export const errorCodes = {
   emptyOrder: 'EMPTY_ORDER',
   productUnavailable: 'PRODUCT_UNAVAILABLE',
   priceChanged: 'PRICE_CHANGED',
+  paymentExceedsBalance: 'PAYMENT_EXCEEDS_BALANCE',
+  balanceNotZero: 'BALANCE_NOT_ZERO',
+  draftOrdersPending: 'DRAFT_ORDERS_PENDING',
+  tabEmpty: 'TAB_EMPTY',
+  tabHasConsumption: 'TAB_HAS_CONSUMPTION',
 } as const;
