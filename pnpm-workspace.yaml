@@ -2,5 +2,7 @@ packages:
   - apps/*
   - packages/*
 allowBuilds:
+  # Telemetria do swagger-ui-dist; o sistema roda offline e não precisa dela.
+  '@scarf/scarf': false
   # Usado por drizzle-kit e tsx; o script só valida o binário da plataforma.
   esbuild: true

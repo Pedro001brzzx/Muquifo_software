@@ -34,6 +34,19 @@ pnpm dev:api    # http://localhost:3000/api/v1/health
 pnpm dev:web    # http://localhost:5173
 ```
 
+## Documentação e teste de rotas (Swagger)
+
+Com a API rodando, abra **http://localhost:3000/docs** (ou `http://<ip-do-pc>:3000/docs` pelo celular).
+O documento OpenAPI fica em `/docs/json`, para importar no Postman/Insomnia.
+
+- Os schemas vêm dos mesmos Zod de `@muquifo/contracts` que validam as requisições, então a documentação não diverge da API.
+- Cada rota lista os erros possíveis com o `code` correspondente.
+- Em rotas com `Idempotency-Key`, deixe o valor `auto` para gerar uma chave nova a cada envio, ou cole um UUID fixo para testar o reenvio.
+- **"Try it out" grava de verdade** no banco do `.env`.
+- Para desligar: `API_DOCS=false` no `.env`.
+
+## Rede local
+
 Os dois servidores escutam na rede local; o log da API mostra os IPs. Abrindo
 `http://<ip-do-pc>:5173` no celular, o app aponta automaticamente para `http://<ip-do-pc>:3000`.
 Libere as portas 3000 e 5173 no firewall do Windows **apenas para redes privadas**.

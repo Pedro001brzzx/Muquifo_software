@@ -7,6 +7,7 @@ import {
 import { AppModule } from './app.module.js';
 import { AllExceptionsFilter } from './common/all-exceptions.filter.js';
 import { loadEnv } from './config/env.js';
+import { setupSwagger } from './openapi/swagger.js';
 
 export const API_PREFIX = 'api/v1';
 
@@ -42,6 +43,8 @@ export async function createApp(
     .addHook('onSend', async (request, reply) => {
       void reply.header('x-request-id', request.id);
     });
+
+  if (env.API_DOCS) setupSwagger(app);
 
   return app;
 }
