@@ -1,10 +1,10 @@
 # Muquifo — sistema de gestão para restaurantes
 
-Monorepo pnpm. Etapa atual: **prova técnica** (API + PostgreSQL + cliente React de testes na rede local).
+Monorepo pnpm. Etapa atual: **prova técnica** (API + PostgreSQL + interface web do salão na rede local).
 
 ```
 apps/api            NestJS 12 + Fastify, Drizzle ORM, PostgreSQL   → /api/v1
-apps/web            React + Vite + TanStack Query (console de testes)
+apps/web            React + Vite + Tailwind/shadcn-ui + TanStack Query (salão, comandas, cadastros)
 packages/contracts  Schemas Zod e tipos compartilhados (validação em execução)
 ```
 
@@ -21,6 +21,7 @@ pnpm install
 # 1. Banco: crie usuário e base (ajuste a senha)
 psql -U postgres -c "CREATE ROLE muquifo LOGIN PASSWORD 'muquifo';"
 psql -U postgres -c "CREATE DATABASE muquifo OWNER muquifo;"
+psql -U postgres -c "CREATE DATABASE muquifo_test OWNER muquifo;"   # só para pnpm test:e2e
 
 # 2. Configuração da API
 Copy-Item apps/api/.env.example apps/api/.env   # edite DATABASE_URL se necessário
@@ -59,7 +60,7 @@ Libere as portas 3000 e 5173 no firewall do Windows **apenas para redes privadas
 | `pnpm db:migrate` | Aplica migrations pendentes |
 | `pnpm db:seed` | Insere dados de demonstração (idempotente) |
 | `pnpm test` | Testes unitários |
-| `pnpm test:e2e` | Testes da API contra o PostgreSQL do `.env` |
+| `pnpm test:e2e` | Testes da API no banco `DATABASE_URL_TEST` (esvaziado a cada rodada; nunca usa o banco do dia a dia) |
 | `pnpm lint` | oxlint + checagem de tipos |
 | `pnpm format` | Formata e organiza imports com Biome |
 | `pnpm format:check` | Verifica formatação sem alterar arquivos |
