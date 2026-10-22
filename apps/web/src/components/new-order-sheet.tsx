@@ -1,5 +1,7 @@
 import {
   errorCodes,
+  flavorsText,
+  type OptionGroup,
   type Order,
   type OrderChannel,
   type Product,
@@ -7,6 +9,7 @@ import {
 } from '@muquifo/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  ListPlus,
   Loader2,
   MessageSquarePlus,
   Minus,
@@ -14,11 +17,24 @@ import {
   Search,
   Send,
   ShoppingCart,
+  SlidersHorizontal,
   Trash2,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { ApiRequestError, api, queryKeys } from '@/api';
+import { FigureTile } from '@/components/figure-picker';
+import {
+  adjustmentsText,
+  type ChosenAdjustment,
+  type ChosenFlavor,
+  type ChosenOption,
+  flavorsForSize,
+  OptionPicker,
+  type PickerResult,
+  type PizzaMenu,
+  unitPriceOf,
+} from '@/components/option-picker';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,19 +54,36 @@ import {
 } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toastError } from '@/lib/errors';
+import { figureOf, kindFigure, kindOfCategory } from '@/lib/figures';
 import { formatCents, formatQuantity, tableLabel } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 export interface CartLine {
   key: number;
   product: Product;
-  /** Preço que o garçom viu; vai como expectedUnitPriceCents. */
+  options: ChosenOption[];
+  adjustments: ChosenAdjustment[];
+  flavors: ChosenFlavor[];
+  /** Produto + sabor + complementos, como o garçom viu; vai como expectedUnitPriceCents. */
   unitPriceCents: number;
   quantity: number;
   notes: string;
   showNotes: boolean;
-  problem?: string;
+  /** `blocking`: a linha precisa sair do carrinho antes de enviar. */
+  problem?: { text: string; blocking: boolean };
 }
+
+/** Identidade da personalização: mesmos sabores, opções e ajustes somam na mesma linha. */
+const lineKey = (
+  l: Pick<PickerResult, 'options' | 'adjustments' | 'flavors'>,
+) =>
+  [
+    ...l.flavors.map((f) => `f:${f.flavorId}`),
+    ...l.options.map((o) => o.optionId),
+    ...l.adjustments.map((a) => `${a.ingredientId}:${a.kind}`),
+  ]
+    .sort()
+    .join();
 
 const channelLabel: Record<Exclude<OrderChannel, 'table'>, string> = {
   counter: 'Balcão',
@@ -67,6 +100,20 @@ const normalize = (s: string) =>
     .toLowerCase();
 
 const lineTotal = (l: CartLine) => Math.round(l.unitPriceCents * l.quantity);
+
+function newLine(product: Product, r: PickerResult): CartLine {
+  return {
+    key: nextKey++,
+    product,
+    options: r.options,
+    adjustments: r.adjustments,
+    flavors: r.flavors,
+    unitPriceCents: unitPriceOf(product, r),
+    quantity: r.quantity,
+    notes: r.notes,
+    showNotes: false,
+  };
+}
 
 export function NewOrderSheet({
   tab,
@@ -88,11 +135,32 @@ export function NewOrderSheet({
   });
   const products = useQuery({
     queryKey: queryKeys.products,
-    queryFn: api.products,
+    queryFn: () => api.products(),
     refetchInterval: open ? 15_000 : false,
   });
+  const optionGroups = useQuery({
+    queryKey: queryKeys.optionGroups,
+    queryFn: () => api.optionGroups(),
+    refetchInterval: open ? 15_000 : false,
+  });
+  const pizzaTiers = useQuery({
+    queryKey: queryKeys.pizzaTiers,
+    queryFn: () => api.pizzaTiers(),
+    refetchInterval: open ? 15_000 : false,
+  });
+  const pizzaFlavors = useQuery({
+    queryKey: queryKeys.pizzaFlavors,
+    queryFn: () => api.pizzaFlavors(),
+    refetchInterval: open ? 15_000 : false,
+  });
+  const pizza: PizzaMenu = {
+    tiers: pizzaTiers.data ?? [],
+    flavors: pizzaFlavors.data ?? [],
+  };
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState<string>('all');
+  const [picking, setPicking] = useState<Product | null>(null);
+  const [editing, setEditing] = useState<CartLine | null>(null);
   const [channel, setChannel] = useState<OrderChannel>(
     tab.tableId ? 'table' : 'counter',
   );
@@ -106,6 +174,7 @@ export function NewOrderSheet({
     );
   }, [products.data, category, search]);
 
+  const categoryName = new Map(categories.data?.map((c) => [c.id, c.name]));
   const usedCategories = (categories.data ?? []).filter((c) =>
     products.data?.some((p) => p.categoryId === c.id),
   );
@@ -120,32 +189,124 @@ export function NewOrderSheet({
       lines.map((l) => (l.key === key ? { ...l, ...patch } : l)),
     );
 
+  /** Grupos do produto: os da categoria (menos os desligados) e depois os dele. */
+  function groupsFor(product: Product): OptionGroup[] {
+    const fromCategory = (
+      categories.data?.find((c) => c.id === product.categoryId)
+        ?.optionGroupIds ?? []
+    ).filter((id) => !product.excludedOptionGroupIds.includes(id));
+    const byId = new Map(optionGroups.data?.map((g) => [g.id, g]));
+    return [...new Set([...fromCategory, ...product.optionGroupIds])]
+      .map((id) => byId.get(id))
+      .filter((g): g is OptionGroup => !!g);
+  }
+
+  const customizable = (product: Product) =>
+    !!product.maxFlavors ||
+    groupsFor(product).length > 0 ||
+    product.ingredients.some((i) => i.adjustable);
+
+  /** Pizza: menor preço entre as faixas com sabor neste tamanho. */
+  const pizzaFrom = (product: Product) => {
+    const prices = flavorsForSize(pizza, product.id).map((t) => t.priceCents);
+    return prices.length ? product.priceCents + Math.min(...prices) : null;
+  };
+
+  /** Um toque adiciona; só abre a escolha se houver sabor ou grupo obrigatório. */
   function add(product: Product) {
+    if (product.maxFlavors || groupsFor(product).some((g) => g.minSelect > 0))
+      setPicking(product);
+    else
+      addLine(product, {
+        options: [],
+        adjustments: [],
+        flavors: [],
+        quantity: 1,
+        notes: '',
+      });
+  }
+
+  function addLine(product: Product, r: PickerResult) {
     setCart((lines) => {
+      // Mesmo produto com a mesma personalização soma na linha existente.
       const same = lines.find(
         (l) =>
           l.product.id === product.id &&
+          lineKey(l) === lineKey(r) &&
           !l.notes &&
+          !r.notes &&
           !product.allowFractional &&
           !l.problem,
       );
       if (same) {
         return lines.map((l) =>
-          l === same ? { ...l, quantity: l.quantity + 1 } : l,
+          l === same ? { ...l, quantity: l.quantity + r.quantity } : l,
         );
       }
-      return [
-        ...lines,
-        {
-          key: nextKey++,
-          product,
-          unitPriceCents: product.priceCents,
-          quantity: 1,
-          notes: '',
-          showNotes: false,
-        },
-      ];
+      return [...lines, newLine(product, r)];
     });
+  }
+
+  /** Troca a personalização de uma linha (botão Personalizar no carrinho). */
+  function replaceLine(key: number, r: PickerResult) {
+    setCart((lines) =>
+      lines.map((l) => (l.key === key ? { ...newLine(l.product, r), key } : l)),
+    );
+  }
+
+  /** Recalcula o preço das linhas do produto com o cardápio atualizado. */
+  async function repriceLines(productId: string) {
+    const [freshProducts, freshGroups, freshTiers] = await Promise.all([
+      qc.fetchQuery({
+        queryKey: queryKeys.products,
+        queryFn: () => api.products(),
+      }),
+      qc.fetchQuery({
+        queryKey: queryKeys.optionGroups,
+        queryFn: () => api.optionGroups(),
+      }),
+      qc.fetchQuery({
+        queryKey: queryKeys.pizzaTiers,
+        queryFn: () => api.pizzaTiers(),
+      }),
+    ]);
+    const product = freshProducts.find((p) => p.id === productId);
+    const optionPrice = new Map(
+      freshGroups.flatMap((g) => g.options.map((o) => [o.id, o.priceCents])),
+    );
+    const tierPrice = new Map(
+      freshTiers.map((t) => [
+        t.name,
+        t.prices.find((p) => p.productId === productId)?.priceCents,
+      ]),
+    );
+    setCart((lines) =>
+      lines.map((l) => {
+        if (l.product.id !== productId || !product) return l;
+        const options = l.options.map((o) => ({
+          ...o,
+          priceCents: optionPrice.get(o.optionId) ?? o.priceCents,
+        }));
+        const flavors = l.flavors.map((f) => ({
+          ...f,
+          priceCents: tierPrice.get(f.tierName) ?? f.priceCents,
+        }));
+        const unit = unitPriceOf(product, { options, flavors });
+        return unit === l.unitPriceCents
+          ? l
+          : {
+              ...l,
+              product,
+              options,
+              flavors,
+              unitPriceCents: unit,
+              problem: {
+                text: `Preço mudou de ${formatCents(l.unitPriceCents)} para ${formatCents(unit)}`,
+                blocking: false,
+              },
+            };
+      }),
+    );
   }
 
   function step(line: CartLine, delta: number) {
@@ -164,6 +325,12 @@ export function NewOrderSheet({
           productId: l.product.id,
           quantity: l.quantity,
           notes: l.notes.trim() || null,
+          optionIds: l.options.map((o) => o.optionId),
+          adjustments: l.adjustments.map((a) => ({
+            ingredientId: a.ingredientId,
+            kind: a.kind,
+          })),
+          flavorIds: l.flavors.map((f) => f.flavorId),
           expectedUnitPriceCents: l.unitPriceCents,
         })),
       }),
@@ -185,38 +352,68 @@ export function NewOrderSheet({
       // A API recusa o pedido inteiro; marcamos a linha para o garçom revisar.
       const details = (
         error instanceof ApiRequestError ? error.body?.details : undefined
-      ) as { productId?: string; currentUnitPriceCents?: number } | undefined;
-      if (error instanceof ApiRequestError && details?.productId) {
-        if (error.code === errorCodes.priceChanged) {
-          const price = details.currentUnitPriceCents ?? 0;
+      ) as
+        | { productId?: string; optionIds?: string[]; flavorIds?: string[] }
+        | undefined;
+      const productId = details?.productId;
+      if (error instanceof ApiRequestError && productId) {
+        const mark = (
+          text: string,
+          match: (l: CartLine) => boolean = () => true,
+        ) =>
           setCart((lines) =>
             lines.map((l) =>
-              l.product.id === details.productId
-                ? {
-                    ...l,
-                    unitPriceCents: price,
-                    problem: `Preço mudou de ${formatCents(l.unitPriceCents)} para ${formatCents(price)}`,
-                  }
+              l.product.id === productId && match(l)
+                ? { ...l, problem: { text, blocking: true } }
                 : l,
             ),
           );
+        if (error.code === errorCodes.priceChanged) {
+          void repriceLines(productId);
           toast.warning('Preço alterado no cardápio', {
             description:
               'O carrinho foi atualizado. Confira com o cliente e envie de novo.',
           });
-          void qc.invalidateQueries({ queryKey: queryKeys.products });
           return;
         }
         if (error.code === errorCodes.productUnavailable) {
-          setCart((lines) =>
-            lines.map((l) =>
-              l.product.id === details.productId
-                ? { ...l, problem: 'Esgotado — remova para enviar' }
-                : l,
-            ),
-          );
+          mark('Esgotado — remova para enviar');
           toast.warning(error.message);
           void qc.invalidateQueries({ queryKey: queryKeys.products });
+          return;
+        }
+        if (
+          error.code === errorCodes.optionUnavailable ||
+          error.code === errorCodes.invalidOptions ||
+          error.code === errorCodes.invalidAdjustments
+        ) {
+          const ids = details?.optionIds;
+          mark(
+            error.code === errorCodes.optionUnavailable
+              ? `${error.message} Remova e lance de novo.`
+              : 'Complementos mudaram no cardápio. Remova e lance de novo.',
+            ids
+              ? (l) => l.options.some((o) => ids.includes(o.optionId))
+              : undefined,
+          );
+          toast.warning(error.message);
+          void qc.invalidateQueries({ queryKey: queryKeys.optionGroups });
+          return;
+        }
+        if (
+          error.code === errorCodes.flavorUnavailable ||
+          error.code === errorCodes.invalidFlavors
+        ) {
+          const ids = details?.flavorIds;
+          mark(
+            `${error.message} Remova e lance de novo.`,
+            ids
+              ? (l) => l.flavors.some((f) => ids.includes(f.flavorId))
+              : undefined,
+          );
+          toast.warning(error.message);
+          void qc.invalidateQueries({ queryKey: queryKeys.pizzaFlavors });
+          void qc.invalidateQueries({ queryKey: queryKeys.pizzaTiers });
           return;
         }
       }
@@ -224,7 +421,7 @@ export function NewOrderSheet({
     },
   });
 
-  const blocked = cart.some((l) => l.problem?.startsWith('Esgotado'));
+  const blocked = cart.some((l) => l.problem?.blocking);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -258,6 +455,9 @@ export function NewOrderSheet({
                 className="shrink-0 rounded-full"
                 onClick={() => setCategory(c.id)}
               >
+                {c.id !== 'all' && (
+                  <span aria-hidden>{kindFigure[kindOfCategory(c.name)]}</span>
+                )}
                 {c.name}
               </Button>
             ))}
@@ -293,13 +493,32 @@ export function NewOrderSheet({
                       inCart > 0 && 'border-primary/60 bg-primary/5',
                     )}
                   >
-                    <span className="line-clamp-2 text-sm leading-snug font-medium">
-                      {p.name}
+                    <span className="flex items-start gap-2.5">
+                      <FigureTile
+                        emoji={figureOf(p, categoryName.get(p.categoryId))}
+                        size="md"
+                      />
+                      <span className="line-clamp-2 pt-0.5 text-sm leading-snug font-medium">
+                        {p.name}
+                      </span>
                     </span>
                     <span className="flex items-center justify-between gap-1">
                       <span className="tabular text-sm text-muted-foreground">
-                        {formatCents(p.priceCents)}
+                        {p.maxFlavors ? (
+                          <>
+                            <span className="text-xs">a partir de </span>
+                            {formatCents(pizzaFrom(p) ?? p.priceCents)}
+                          </>
+                        ) : (
+                          formatCents(p.priceCents)
+                        )}
                         {p.allowFractional && '/kg'}
+                        {customizable(p) && (
+                          <ListPlus
+                            className="ml-1 inline size-3.5 align-[-2px]"
+                            aria-label="Tem complementos"
+                          />
+                        )}
                       </span>
                       {!p.available ? (
                         <Badge variant="secondary">Esgotado</Badge>
@@ -372,11 +591,42 @@ export function NewOrderSheet({
                       <div className="truncate text-sm font-medium">
                         {line.product.name}
                       </div>
+                      {line.flavors.length > 0 && (
+                        <div className="text-xs font-medium">
+                          {flavorsText(line.flavors)}
+                        </div>
+                      )}
+                      {line.options.length > 0 && (
+                        <div className="text-xs text-muted-foreground">
+                          {line.options.map((o) => o.name).join(', ')}
+                        </div>
+                      )}
+                      {line.adjustments.length > 0 && (
+                        <div className="text-xs text-destructive/80">
+                          {adjustmentsText(line.adjustments)}
+                        </div>
+                      )}
                       <div className="text-xs text-muted-foreground tabular">
                         {formatCents(line.unitPriceCents)}
                         {line.product.allowFractional ? '/kg' : ' cada'}
                       </div>
                     </div>
+                    {customizable(line.product) && (
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label={`Personalizar ${line.product.name}`}
+                        className={cn(
+                          (line.options.length > 0 ||
+                            line.adjustments.length > 0 ||
+                            line.flavors.length > 0) &&
+                            'text-primary',
+                        )}
+                        onClick={() => setEditing(line)}
+                      >
+                        <SlidersHorizontal />
+                      </Button>
+                    )}
                     <Button
                       size="icon-sm"
                       variant="ghost"
@@ -411,8 +661,8 @@ export function NewOrderSheet({
                   )}
                   {line.problem && (
                     <div className="flex items-center justify-between gap-2 rounded-md bg-busy/10 px-2 py-1 text-xs text-busy">
-                      {line.problem}
-                      {line.problem.startsWith('Esgotado') ? (
+                      {line.problem.text}
+                      {line.problem.blocking ? (
                         <Button
                           size="xs"
                           variant="ghost"
@@ -488,6 +738,30 @@ export function NewOrderSheet({
             </Button>
           </div>
         </div>
+        <OptionPicker
+          product={picking}
+          groups={picking ? groupsFor(picking) : []}
+          allGroups={optionGroups.data ?? []}
+          pizza={pizza}
+          onClose={() => setPicking(null)}
+          onConfirm={(result) => {
+            if (picking) addLine(picking, result);
+            setPicking(null);
+          }}
+        />
+        <OptionPicker
+          product={editing?.product ?? null}
+          groups={editing ? groupsFor(editing.product) : []}
+          allGroups={optionGroups.data ?? []}
+          pizza={pizza}
+          initial={editing ?? undefined}
+          confirmLabel="Salvar"
+          onClose={() => setEditing(null)}
+          onConfirm={(result) => {
+            if (editing) replaceLine(editing.key, result);
+            setEditing(null);
+          }}
+        />
       </SheetContent>
     </Sheet>
   );

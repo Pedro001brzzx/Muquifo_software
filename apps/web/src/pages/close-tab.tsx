@@ -1,4 +1,5 @@
 import {
+  flavorsText,
   type Payment,
   type PaymentMethod,
   parseCents,
@@ -27,6 +28,8 @@ import { Link, useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
 import { api } from '@/api';
 import { PageBody } from '@/components/layout';
+import { centsToInput, MoneyInput } from '@/components/money-input';
+import { adjustmentsText } from '@/components/option-picker';
 import { EmptyState, TabStatusBadge } from '@/components/shared';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
@@ -57,13 +60,11 @@ const methodIcon: Record<PaymentMethod, LucideIcon> = {
 };
 const methods: PaymentMethod[] = ['cash', 'pix', 'credit', 'debit'];
 
-/** "112,00" para o campo de valor. */
-const toInput = (cents: number) =>
-  (Math.max(0, cents) / 100).toFixed(2).replace('.', ',');
-
 interface ReceiptLine {
   key: string;
   name: string;
+  /** Complementos escolhidos, já somados no preço. */
+  extras: string;
   unitPriceCents: number;
   quantity: number;
   totalCents: number;
@@ -80,7 +81,15 @@ function receiptLines(tab: TabDetail) {
         canceled++;
         continue;
       }
-      const key = `${item.productName}|${item.unitPriceCents}`;
+      // Só junta itens iguais de verdade: mesmo produto, preço e complementos.
+      const extras = [
+        flavorsText(item.flavors),
+        item.options.map((o) => o.name).join(', '),
+        adjustmentsText(item.adjustments),
+      ]
+        .filter(Boolean)
+        .join(' · ');
+      const key = `${item.productName}|${item.unitPriceCents}|${extras}`;
       const line = lines.get(key);
       if (line) {
         line.quantity += item.quantity;
@@ -89,6 +98,7 @@ function receiptLines(tab: TabDetail) {
         lines.set(key, {
           key,
           name: item.productName,
+          extras,
           unitPriceCents: item.unitPriceCents,
           quantity: item.quantity,
           totalCents: item.totalCents,
@@ -329,6 +339,11 @@ function Receipt({
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm">{l.name}</span>
+                {l.extras && (
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {l.extras}
+                  </span>
+                )}
                 <span className="block text-xs text-muted-foreground tabular">
                   {formatCents(l.unitPriceCents)} un.
                 </span>
@@ -410,7 +425,7 @@ function PaymentForm({
 }) {
   const [method, setMethod] = useState<PaymentMethod>('cash');
   const [people, setPeople] = useState(1);
-  const [amountText, setAmountText] = useState(toInput(tab.balanceCents));
+  const [amountText, setAmountText] = useState(centsToInput(tab.balanceCents));
   const [receivedText, setReceivedText] = useState('');
 
   // Sugestão: saldo dividido pelo número de pessoas (a última paga o restante).
@@ -419,7 +434,7 @@ function PaymentForm({
     Math.ceil(tab.balanceCents / people),
   );
   useEffect(() => {
-    setAmountText(toInput(suggested));
+    setAmountText(centsToInput(suggested));
     setReceivedText('');
   }, [suggested]);
 
@@ -554,7 +569,7 @@ function PaymentForm({
                   className="underline-offset-2 hover:underline"
                   onClick={() => {
                     setPeople(1);
-                    setAmountText(toInput(tab.balanceCents));
+                    setAmountText(centsToInput(tab.balanceCents));
                   }}
                 >
                   Saldo total: {formatCents(tab.balanceCents)}
@@ -579,7 +594,7 @@ function PaymentForm({
                     type="button"
                     size="xs"
                     variant="outline"
-                    onClick={() => setReceivedText(toInput(b))}
+                    onClick={() => setReceivedText(centsToInput(b))}
                   >
                     {formatCents(b)}
                   </Button>
@@ -610,39 +625,6 @@ function PaymentForm({
         </Button>
       </CardContent>
     </Card>
-  );
-}
-
-function MoneyInput({
-  id,
-  value,
-  onChange,
-  placeholder,
-  invalid,
-}: {
-  id: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  invalid?: boolean;
-}) {
-  return (
-    <div className="relative">
-      <span className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-sm text-muted-foreground">
-        R$
-      </span>
-      <Input
-        id={id}
-        inputMode="decimal"
-        autoComplete="off"
-        className="h-11 pl-10 text-lg font-semibold tabular"
-        value={value}
-        placeholder={placeholder}
-        aria-invalid={invalid || undefined}
-        onFocus={(e) => e.currentTarget.select()}
-        onChange={(e) => onChange(e.target.value.replace(/[^\d,.]/g, ''))}
-      />
-    </div>
   );
 }
 

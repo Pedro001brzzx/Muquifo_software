@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   LayoutGrid,
   type LucideIcon,
+  Package,
   ReceiptText,
   Settings2,
   UtensilsCrossed,
@@ -20,6 +21,7 @@ import { cn } from '@/lib/utils';
 const nav: { to: string; label: string; icon: LucideIcon; end?: boolean }[] = [
   { to: '/', label: 'Salão', icon: LayoutGrid, end: true },
   { to: '/comandas', label: 'Comandas', icon: ReceiptText },
+  { to: '/produtos', label: 'Produtos', icon: Package },
   { to: '/cadastros', label: 'Cadastros', icon: Settings2 },
 ];
 
@@ -125,7 +127,7 @@ function SideNav() {
 
 function BottomNav() {
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-3 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
+    <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
       {nav.map(({ to, label, icon: Icon, end }) => (
         <NavLink
           key={to}

@@ -1,4 +1,9 @@
-import type { Order, OrderItem, TabDetail } from '@muquifo/contracts';
+import {
+  flavorsText,
+  type Order,
+  type OrderItem,
+  type TabDetail,
+} from '@muquifo/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
@@ -22,6 +27,7 @@ import { ApiRequestError, api } from '@/api';
 import { CancelDialog, type CancelTarget } from '@/components/cancel-dialog';
 import { PageBody } from '@/components/layout';
 import { type CartLine, NewOrderSheet } from '@/components/new-order-sheet';
+import { adjustmentsText } from '@/components/option-picker';
 import { ReleaseTableDialog } from '@/components/release-table-dialog';
 import {
   EmptyState,
@@ -516,6 +522,44 @@ function OrderCard({
                 >
                   {item.productName}
                 </div>
+                {item.flavors.length > 0 && (
+                  <div
+                    className={cn(
+                      'text-xs font-medium',
+                      itemCanceled && 'line-through',
+                    )}
+                  >
+                    {flavorsText(item.flavors)}
+                  </div>
+                )}
+                {item.options.length > 0 && (
+                  <div
+                    className={cn(
+                      'text-xs text-muted-foreground',
+                      itemCanceled && 'line-through',
+                    )}
+                  >
+                    {item.options
+                      .map(
+                        (o) =>
+                          o.name +
+                          (o.priceCents
+                            ? ` (+${formatCents(o.priceCents)})`
+                            : ''),
+                      )
+                      .join(' · ')}
+                  </div>
+                )}
+                {item.adjustments.length > 0 && (
+                  <div
+                    className={cn(
+                      'text-xs font-medium text-destructive/80',
+                      itemCanceled && 'line-through',
+                    )}
+                  >
+                    {adjustmentsText(item.adjustments)}
+                  </div>
+                )}
                 {item.notes && (
                   <div className="text-xs text-muted-foreground italic">
                     “{item.notes}”

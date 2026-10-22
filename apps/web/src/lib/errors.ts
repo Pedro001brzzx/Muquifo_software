@@ -18,6 +18,8 @@ const titles: Record<string, string> = {
   [errorCodes.draftOrdersPending]: 'Há pedidos em rascunho',
   [errorCodes.tabEmpty]: 'Comanda sem consumo',
   [errorCodes.tabHasConsumption]: 'Comanda com consumo',
+  [errorCodes.categoryInUse]: 'Categoria com produtos ativos',
+  [errorCodes.categoryArchived]: 'Categoria arquivada',
 };
 
 export function errorTitle(error: unknown): string {
