@@ -9,13 +9,14 @@ describe('ZodValidationPipe', () => {
   it('aplica defaults e retorna dados válidos', () => {
     expect(
       pipe.transform({ categoryId, name: ' Pizza ', priceCents: 6000 }),
-    ).toEqual({
+    ).toMatchObject({
       categoryId,
       sectorId: null,
       name: 'Pizza',
       description: null,
       priceCents: 6000,
       allowFractional: false,
+      available: true,
     });
   });
 

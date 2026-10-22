@@ -41,15 +41,58 @@ const pgErrors: Record<
   },
 };
 
-function findPgCode(error: unknown): string | undefined {
+/** Mensagem e campo por restrição única, para o formulário apontar o campo certo. */
+const uniqueConstraints: Record<string, { message: string; field: string }> = {
+  products_category_name_uq: {
+    message: 'Já existe um produto com esse nome nesta categoria.',
+    field: 'name',
+  },
+  products_code_uq: {
+    message: 'Esse código já é usado por outro produto.',
+    field: 'code',
+  },
+  categories_name_uq: {
+    message: 'Já existe uma categoria com esse nome.',
+    field: 'name',
+  },
+  option_groups_name_uq: {
+    message: 'Já existe um grupo de complementos com esse nome.',
+    field: 'name',
+  },
+  ingredients_name_uq: {
+    message: 'Já existe um ingrediente com esse nome.',
+    field: 'name',
+  },
+  pizza_tiers_name_uq: {
+    message: 'Já existe uma faixa com esse nome.',
+    field: 'name',
+  },
+  pizza_flavors_name_uq: {
+    message: 'Já existe um sabor com esse nome.',
+    field: 'name',
+  },
+  dining_tables_number_uq: {
+    message: 'Já existe uma mesa com esse número.',
+    field: 'number',
+  },
+};
+
+function findPgError(
+  error: unknown,
+): { code: string; constraint?: string } | undefined {
   // Drizzle embrulha o erro do driver em `cause`.
   for (
     let e: unknown = error;
     e && typeof e === 'object';
     e = (e as { cause?: unknown }).cause
   ) {
-    const code = (e as { code?: unknown }).code;
-    if (typeof code === 'string' && /^\d{5}$/.test(code)) return code;
+    const { code, constraint } = e as { code?: unknown; constraint?: unknown };
+    if (typeof code === 'string' && /^\d{5}$/.test(code)) {
+      return {
+        code,
+        constraint: typeof constraint === 'string' ? constraint : undefined,
+      };
+    }
   }
   return undefined;
 }
@@ -69,7 +112,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       message: 'Erro interno. Informe o requestId ao suporte.',
     };
 
-    const pgCode = findPgCode(exception);
+    const pg = findPgError(exception);
     if (exception instanceof AppException) {
       status = exception.status;
       body = {
@@ -86,10 +129,19 @@ export class AllExceptionsFilter implements ExceptionFilter {
             ? 'Recurso não encontrado.'
             : exception.message,
       };
-    } else if (pgCode && pgErrors[pgCode]) {
-      const mapped = pgErrors[pgCode];
+    } else if (pg && pgErrors[pg.code]) {
+      const mapped = pgErrors[pg.code];
+      const unique = pg.constraint
+        ? uniqueConstraints[pg.constraint]
+        : undefined;
       status = mapped.status;
-      body = { code: mapped.code, message: mapped.message };
+      body = unique
+        ? {
+            code: mapped.code,
+            message: unique.message,
+            details: { field: unique.field },
+          }
+        : { code: mapped.code, message: mapped.message };
     }
 
     if (status >= 500) {

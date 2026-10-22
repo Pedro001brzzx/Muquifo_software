@@ -7,12 +7,21 @@ import {
   type submitOrderSchema,
 } from '@muquifo/contracts';
 import { HttpStatus, Inject, Injectable } from '@nestjs/common';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import { AppException } from '../common/app-exception.js';
 import type { Database, Transaction } from '../db/client.js';
 import { DB } from '../db/database.module.js';
-import { orderItems, orders, products } from '../db/schema.js';
+import {
+  orderItemAdjustments,
+  orderItemFlavors,
+  orderItemOptions,
+  orderItems,
+  orders,
+  products,
+} from '../db/schema.js';
+import { resolveAdjustments, resolveOptions } from '../options/option-rules.js';
+import { resolveFlavors } from '../pizza/pizza-rules.js';
 import {
   getOrder,
   lockOrderWithTab,
@@ -96,6 +105,16 @@ export class OrdersService {
     const { order, tab } = await lockOrderWithTab(tx, orderId);
     assertTabAccepts(tab, 'order');
     assertDraft(order);
+    const ownItem = sql`(select ${orderItems.id} from ${orderItems} where ${orderItems.id} = ${itemId} and ${orderItems.orderId} = ${order.id})`;
+    await tx
+      .delete(orderItemOptions)
+      .where(sql`${orderItemOptions.orderItemId} in ${ownItem}`);
+    await tx
+      .delete(orderItemAdjustments)
+      .where(sql`${orderItemAdjustments.orderItemId} in ${ownItem}`);
+    await tx
+      .delete(orderItemFlavors)
+      .where(sql`${orderItemFlavors.orderItemId} in ${ownItem}`);
     const deleted = await tx
       .delete(orderItems)
       .where(and(eq(orderItems.id, itemId), eq(orderItems.orderId, order.id)))
@@ -207,11 +226,13 @@ export class OrdersService {
         { productId: input.productId },
       );
     }
-    if (!product.available) {
+    if (!product.available || !product.active) {
       throw new AppException(
         HttpStatus.CONFLICT,
         errorCodes.productUnavailable,
-        `${product.name} está indisponível no momento.`,
+        product.active
+          ? `${product.name} está indisponível no momento.`
+          : `${product.name} saiu do cardápio.`,
         { productId: product.id },
       );
     }
@@ -223,9 +244,23 @@ export class OrdersService {
         { productId: product.id, quantity: input.quantity },
       );
     }
+    const { selected, extraCents } = await resolveOptions(
+      tx,
+      product,
+      input.optionIds,
+    );
+    const adjustments = await resolveAdjustments(
+      tx,
+      product,
+      input.adjustments,
+    );
+    const flavors = await resolveFlavors(tx, product, input.flavorIds);
+    // Preço unitário = produto + sabor mais caro + complementos; é o que o
+    // aparelho deve ter exibido.
+    const unitPriceCents = product.priceCents + flavors.priceCents + extraCents;
     if (
       input.expectedUnitPriceCents !== undefined &&
-      input.expectedUnitPriceCents !== product.priceCents
+      input.expectedUnitPriceCents !== unitPriceCents
     ) {
       throw new AppException(
         HttpStatus.CONFLICT,
@@ -234,20 +269,58 @@ export class OrdersService {
         {
           productId: product.id,
           expectedUnitPriceCents: input.expectedUnitPriceCents,
-          currentUnitPriceCents: product.priceCents,
+          currentUnitPriceCents: unitPriceCents,
         },
       );
     }
-    await tx.insert(orderItems).values({
-      orderId,
-      productId: product.id,
-      productName: product.name,
-      unitPriceCents: product.priceCents,
-      quantity: input.quantity,
-      totalCents: Math.round(product.priceCents * input.quantity),
-      sectorId: product.sectorId,
-      notes: input.notes,
-    });
+    const [item] = await tx
+      .insert(orderItems)
+      .values({
+        orderId,
+        productId: product.id,
+        productName: product.name,
+        unitPriceCents,
+        quantity: input.quantity,
+        totalCents: Math.round(unitPriceCents * input.quantity),
+        sectorId: product.sectorId,
+        notes: input.notes,
+      })
+      .returning({ id: orderItems.id });
+    if (selected.length) {
+      await tx.insert(orderItemOptions).values(
+        selected.map((o, i) => ({
+          orderItemId: item.id,
+          optionId: o.optionId,
+          groupName: o.groupName,
+          name: o.name,
+          priceCents: o.priceCents,
+          sortOrder: i,
+        })),
+      );
+    }
+    if (adjustments.length) {
+      await tx.insert(orderItemAdjustments).values(
+        adjustments.map((a, i) => ({
+          orderItemId: item.id,
+          ingredientId: a.ingredientId,
+          ingredientName: a.name,
+          kind: a.kind,
+          sortOrder: i,
+        })),
+      );
+    }
+    if (flavors.selected.length) {
+      await tx.insert(orderItemFlavors).values(
+        flavors.selected.map((f, i) => ({
+          orderItemId: item.id,
+          flavorId: f.flavorId,
+          name: f.name,
+          tierName: f.tierName,
+          priceCents: f.priceCents,
+          sortOrder: i,
+        })),
+      );
+    }
   }
 
   private async markSubmitted(tx: Transaction, orderId: string): Promise<void> {

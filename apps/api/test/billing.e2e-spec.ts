@@ -282,7 +282,7 @@ describe.skipIf(!process.env.DATABASE_URL)('Fechamento de conta (e2e)', () => {
         pay(tab.id, { method: 'pix', amountCents: 5000 }),
       ),
     );
-    expect(results.map((r) => r.statusCode).sort()).toEqual([
+    expect(results.map((r) => r.statusCode).sort((a, b) => a - b)).toEqual([
       201, 409, 409, 409,
     ]);
     expect(await getTab(tab.id)).toMatchObject({

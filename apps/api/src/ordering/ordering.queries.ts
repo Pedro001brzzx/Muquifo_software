@@ -1,6 +1,9 @@
 import type {
   Order,
   OrderItem,
+  OrderItemAdjustment,
+  OrderItemFlavor,
+  OrderItemOption,
   Payment,
   TabDetail,
   TabStatus,
@@ -11,6 +14,9 @@ import { AppException } from '../common/app-exception.js';
 import type { Executor, Transaction } from '../db/client.js';
 import {
   diningTables,
+  orderItemAdjustments,
+  orderItemFlavors,
+  orderItemOptions,
   orderItems,
   orders,
   payments,
@@ -24,8 +30,16 @@ type PaymentRow = typeof payments.$inferSelect;
 
 const iso = (d: Date | null) => (d ? d.toISOString() : null);
 
-function toItem(row: OrderItemRow): OrderItem {
+function toItem(
+  row: OrderItemRow,
+  options: OrderItemOption[],
+  adjustments: OrderItemAdjustment[],
+  flavors: OrderItemFlavor[],
+): OrderItem {
   return {
+    options,
+    adjustments,
+    flavors,
     id: row.id,
     orderId: row.orderId,
     productId: row.productId,
@@ -82,8 +96,61 @@ async function loadOrders(db: Executor, where: SQL): Promise<Order[]> {
       ),
     )
     .orderBy(asc(orderItems.seq));
+  const itemIds = itemRows.map((i) => i.id);
+  const [optionRows, adjustmentRows, flavorRows] = itemIds.length
+    ? await Promise.all([
+        db
+          .select()
+          .from(orderItemOptions)
+          .where(inArray(orderItemOptions.orderItemId, itemIds))
+          .orderBy(asc(orderItemOptions.sortOrder)),
+        db
+          .select()
+          .from(orderItemAdjustments)
+          .where(inArray(orderItemAdjustments.orderItemId, itemIds))
+          .orderBy(asc(orderItemAdjustments.sortOrder)),
+        db
+          .select()
+          .from(orderItemFlavors)
+          .where(inArray(orderItemFlavors.orderItemId, itemIds))
+          .orderBy(asc(orderItemFlavors.sortOrder)),
+      ])
+    : [[], [], []];
+  const flavorsOf = (itemId: string): OrderItemFlavor[] =>
+    flavorRows
+      .filter((f) => f.orderItemId === itemId)
+      .map((f) => ({
+        flavorId: f.flavorId,
+        name: f.name,
+        tierName: f.tierName,
+        priceCents: f.priceCents,
+      }));
+  const adjustmentsOf = (itemId: string): OrderItemAdjustment[] =>
+    adjustmentRows
+      .filter((a) => a.orderItemId === itemId)
+      .map((a) => ({
+        ingredientId: a.ingredientId,
+        name: a.ingredientName,
+        kind: a.kind,
+      }));
+  const optionsOf = (itemId: string): OrderItemOption[] =>
+    optionRows
+      .filter((o) => o.orderItemId === itemId)
+      .map((o) => ({
+        optionId: o.optionId,
+        groupName: o.groupName,
+        name: o.name,
+        priceCents: o.priceCents,
+      }));
   return orderRows.map((o) =>
-    toOrder(o, itemRows.filter((i) => i.orderId === o.id).map(toItem)),
+    toOrder(
+      o,
+      itemRows
+        .filter((i) => i.orderId === o.id)
+        .map((i) =>
+          toItem(i, optionsOf(i.id), adjustmentsOf(i.id), flavorsOf(i.id)),
+        ),
+    ),
   );
 }
 

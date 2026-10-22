@@ -37,4 +37,12 @@ export const errorCodes = {
   draftOrdersPending: 'DRAFT_ORDERS_PENDING',
   tabEmpty: 'TAB_EMPTY',
   tabHasConsumption: 'TAB_HAS_CONSUMPTION',
+  categoryInUse: 'CATEGORY_IN_USE',
+  categoryArchived: 'CATEGORY_ARCHIVED',
+  invalidOptions: 'INVALID_OPTIONS',
+  optionUnavailable: 'OPTION_UNAVAILABLE',
+  invalidAdjustments: 'INVALID_ADJUSTMENTS',
+  invalidFlavors: 'INVALID_FLAVORS',
+  flavorUnavailable: 'FLAVOR_UNAVAILABLE',
+  pizzaTierInUse: 'PIZZA_TIER_IN_USE',
 } as const;

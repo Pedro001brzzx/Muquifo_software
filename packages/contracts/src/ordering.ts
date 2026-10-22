@@ -1,6 +1,12 @@
 import { z } from 'zod';
 import { paymentSchema } from './billing.js';
+import {
+  adjustmentInputSchema,
+  orderItemAdjustmentSchema,
+} from './ingredients.js';
 import { centsSchema } from './money.js';
+import { orderItemOptionSchema } from './options.js';
+import { MAX_PIZZA_FLAVORS, orderItemFlavorSchema } from './pizza.js';
 
 export const tabStatusSchema = z.enum([
   'open',
@@ -78,6 +84,12 @@ export const orderItemSchema = z.object({
   totalCents: centsSchema,
   sectorId: z.uuid().nullable(),
   notes: z.string().nullable(),
+  /** Complementos escolhidos; já somados em `unitPriceCents`. */
+  options: z.array(orderItemOptionSchema),
+  /** Sem/Pouco/Extra nos ingredientes ajustáveis (sem custo). */
+  adjustments: z.array(orderItemAdjustmentSchema),
+  /** Sabores da pizza na ordem escolhida; o preço é o da faixa mais cara. */
+  flavors: z.array(orderItemFlavorSchema),
   status: orderItemStatusSchema,
   cancelReason: z.string().nullable(),
   canceledAt: z.iso.datetime({ offset: true }).nullable(),
@@ -121,9 +133,29 @@ export const addOrderItemSchema = z.object({
   productId: z.uuid(),
   quantity: quantitySchema.default(1),
   notes: notesSchema,
+  /** Complementos escolhidos; o servidor valida mínimo/máximo de cada grupo. */
+  optionIds: z
+    .array(z.uuid())
+    .max(50)
+    .refine((ids) => new Set(ids).size === ids.length, 'Opção repetida.')
+    .default([]),
+  adjustments: z
+    .array(adjustmentInputSchema)
+    .max(30)
+    .refine(
+      (list) => new Set(list.map((a) => a.ingredientId)).size === list.length,
+      'Ingrediente ajustado duas vezes.',
+    )
+    .default([]),
+  /** Sabores, só para tamanho de pizza: de 1 até o máximo do tamanho. */
+  flavorIds: z
+    .array(z.uuid())
+    .max(MAX_PIZZA_FLAVORS)
+    .refine((ids) => new Set(ids).size === ids.length, 'Sabor repetido.')
+    .default([]),
   /**
-   * Preço que o aparelho exibiu ao montar o pedido. Se o preço atual for outro,
-   * a API recusa com PRICE_CHANGED em vez de cobrar um valor que o cliente não viu.
+   * Preço unitário (produto + sabor mais caro + complementos) que o aparelho exibiu. Se o atual for
+   * outro, a API recusa com PRICE_CHANGED em vez de cobrar um valor que o cliente não viu.
    */
   expectedUnitPriceCents: centsSchema.optional(),
 });

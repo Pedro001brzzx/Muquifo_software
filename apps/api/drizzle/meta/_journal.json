@@ -29,6 +29,41 @@
       "when": 1792447609752,
       "tag": "0003_payments_and_tab_close",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792451391300,
+      "tag": "0004_product_admin",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792454606334,
+      "tag": "0005_option_groups",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792464350310,
+      "tag": "0006_ingredients_and_combos",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792618947608,
+      "tag": "0007_pizzeria",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792623220307,
+      "tag": "0008_product_icon",
+      "breakpoints": true
     }
   ]
 }
