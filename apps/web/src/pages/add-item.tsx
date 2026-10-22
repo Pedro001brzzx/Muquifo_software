@@ -1,5 +1,4 @@
 import {
-  type Category,
   errorCodes,
   formatCents,
   type OptionGroup,
@@ -25,12 +24,8 @@ import { PizzaKitDialog } from '@/components/pizza-kit';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toastError } from '@/lib/errors';
-import {
-  guessFigure,
-  type ItemKind,
-  kindFigure,
-  kindOfCategory,
-} from '@/lib/figures';
+import { guessFigure, type ItemKind, kindFigure } from '@/lib/figures';
+import { ensureCategory, sectorFor } from '@/lib/menu-setup';
 import { cn } from '@/lib/utils';
 
 type Step =
@@ -48,56 +43,48 @@ const kinds: {
   /** "outra bebida", "outro lanche". */
   another: string;
   hint: string;
-  category: string;
 }[] = [
   {
     kind: 'burger',
     label: 'Lanche',
     another: 'outro lanche',
     hint: 'Hambúrguer, sanduíche, pastel',
-    category: 'Lanches',
   },
   {
     kind: 'pizza',
     label: 'Pizza',
     another: 'outro sabor',
     hint: 'Novo sabor de pizza',
-    category: 'Pizzas',
   },
   {
     kind: 'drink',
     label: 'Bebida',
     another: 'outra bebida',
     hint: 'Refrigerante, suco, cerveja',
-    category: 'Bebidas',
   },
   {
     kind: 'side',
     label: 'Porção',
     another: 'outra porção',
     hint: 'Batata, petiscos',
-    category: 'Porções',
   },
   {
     kind: 'dessert',
     label: 'Sobremesa',
     another: 'outra sobremesa',
     hint: 'Doces, sorvete, açaí',
-    category: 'Sobremesas',
   },
   {
     kind: 'dish',
     label: 'Prato',
     another: 'outro prato',
     hint: 'Prato feito, massa, carne',
-    category: 'Pratos',
   },
   {
     kind: 'other',
     label: 'Outro',
     another: 'outro item',
     hint: 'Qualquer outro item',
-    category: 'Outros',
   },
 ];
 
@@ -176,24 +163,12 @@ export function AddItemPage() {
     else navigate('/produtos');
   }
 
-  /** Categoria do tipo: uma existente que combine ou uma nova com o nome padrão. */
-  async function ensureCategory(): Promise<Category> {
-    const list = categories.data ?? [];
-    const found =
-      list.find((c) => c.active && kindOfCategory(c.name) === kind) ??
-      list.find((c) => c.active && c.name === meta.category);
-    return found ?? api.createCategory({ name: meta.category });
-  }
-
   const saveProduct = useMutation({
     mutationFn: async () => {
-      const category = await ensureCategory();
-      const sector = sectors.data?.find((s) =>
-        (kind === 'drink' ? /bar|copa|bebida/i : /cozinha/i).test(s.name),
-      );
+      const category = await ensureCategory(kind, [...(categories.data ?? [])]);
       return api.createProduct({
         categoryId: category.id,
-        sectorId: sector?.id ?? null,
+        sectorId: sectorFor(kind, sectors.data),
         name: name.trim(),
         priceCents: parseCents(priceText) ?? 0,
         icon: shownFigure,

@@ -1,4 +1,8 @@
-import type { CreateOptionGroupInput, OptionGroup } from '@muquifo/contracts';
+import type {
+  Category,
+  CreateOptionGroupInput,
+  OptionGroup,
+} from '@muquifo/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Sparkles } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -142,7 +146,70 @@ const kitIngredients = [
 const same = (a: string, b: string) =>
   a.trim().toLowerCase() === b.trim().toLowerCase();
 
-/** Cria os grupos e ingredientes do modelo, reaproveitando o que já existe. */
+/**
+ * Cria os grupos e ingredientes do modelo, reaproveitando o que já existe
+ * pelo nome, e liga os grupos à categoria (se houver).
+ */
+export async function applyLanchoneteKit({
+  picked = new Set(kitGroups.map((g) => g.key)),
+  withIngredients = true,
+  category,
+}: {
+  picked?: Set<string>;
+  withIngredients?: boolean;
+  category: Category | null;
+}) {
+  const existing = await api.optionGroups({ status: 'all' });
+  const byKey = new Map<string, OptionGroup>();
+  let created = 0;
+  // Bebida antes do combo, que aponta para ela.
+  const ordered = [...kitGroups].sort(
+    (a, b) => Number(!!b.childOnly) - Number(!!a.childOnly),
+  );
+  for (const g of ordered) {
+    if (!picked.has(g.key)) continue;
+    const found = existing.find((e) => same(e.name, g.name));
+    if (found) {
+      byKey.set(g.key, found);
+      continue;
+    }
+    const group = await api.createOptionGroup({
+      name: g.name,
+      minSelect: g.minSelect,
+      maxSelect: g.maxSelect,
+      options: g.options.map((o) => ({
+        name: o.name,
+        priceCents: o.priceCents ?? 0,
+        childGroupId: o.child ? (byKey.get(o.child)?.id ?? null) : null,
+      })),
+    });
+    byKey.set(g.key, group);
+    created++;
+  }
+
+  let linked = 0;
+  if (category) {
+    const topLevel = kitGroups
+      .filter((g) => !g.childOnly && !g.perProduct && byKey.has(g.key))
+      .map((g) => byKey.get(g.key)!.id);
+    const ids = [...new Set([...category.optionGroupIds, ...topLevel])];
+    linked = ids.length - category.optionGroupIds.length;
+    if (linked) await api.updateCategory(category.id, { optionGroupIds: ids });
+  }
+
+  let ingredientsCreated = 0;
+  if (withIngredients) {
+    const library = await api.ingredients({ status: 'all' });
+    for (const name of kitIngredients) {
+      if (library.some((i) => same(i.name, name))) continue;
+      await api.createIngredient({ name });
+      ingredientsCreated++;
+    }
+  }
+  return { created, linked, ingredientsCreated };
+}
+
+/** Diálogo do modelo de lanchonete, com escolha de grupos e categoria. */
 export function StarterKitDialog({
   open,
   onClose,
@@ -182,59 +249,12 @@ export function StarterKitDialog({
     });
 
   const apply = useMutation({
-    mutationFn: async () => {
-      const existing = await api.optionGroups({ status: 'all' });
-      const byKey = new Map<string, OptionGroup>();
-      let created = 0;
-      // Bebida antes do combo, que aponta para ela.
-      const ordered = [...kitGroups].sort(
-        (a, b) => Number(!!b.childOnly) - Number(!!a.childOnly),
-      );
-      for (const g of ordered) {
-        if (!picked.has(g.key)) continue;
-        const found = existing.find((e) => same(e.name, g.name));
-        if (found) {
-          byKey.set(g.key, found);
-          continue;
-        }
-        const group = await api.createOptionGroup({
-          name: g.name,
-          minSelect: g.minSelect,
-          maxSelect: g.maxSelect,
-          options: g.options.map((o) => ({
-            name: o.name,
-            priceCents: o.priceCents ?? 0,
-            childGroupId: o.child ? (byKey.get(o.child)?.id ?? null) : null,
-          })),
-        });
-        byKey.set(g.key, group);
-        created++;
-      }
-
-      let linked = 0;
-      if (categoryId !== 'none') {
-        const category = categories.data?.find((c) => c.id === categoryId);
-        const topLevel = kitGroups
-          .filter((g) => !g.childOnly && !g.perProduct && byKey.has(g.key))
-          .map((g) => byKey.get(g.key)!.id);
-        const ids = [
-          ...new Set([...(category?.optionGroupIds ?? []), ...topLevel]),
-        ];
-        linked = ids.length - (category?.optionGroupIds.length ?? 0);
-        await api.updateCategory(categoryId, { optionGroupIds: ids });
-      }
-
-      let ingredientsCreated = 0;
-      if (withIngredients) {
-        const library = await api.ingredients({ status: 'all' });
-        for (const name of kitIngredients) {
-          if (library.some((i) => same(i.name, name))) continue;
-          await api.createIngredient({ name });
-          ingredientsCreated++;
-        }
-      }
-      return { created, linked, ingredientsCreated };
-    },
+    mutationFn: () =>
+      applyLanchoneteKit({
+        picked,
+        withIngredients,
+        category: categories.data?.find((c) => c.id === categoryId) ?? null,
+      }),
     onSuccess: ({ created, linked, ingredientsCreated }) => {
       toast.success('Modelo de lanchonete aplicado', {
         description: [

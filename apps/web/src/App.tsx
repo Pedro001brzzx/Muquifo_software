@@ -7,6 +7,7 @@ import { AddItemPage } from '@/pages/add-item';
 import { BurgerBuilderPage } from '@/pages/burger-builder';
 import { CloseTabPage } from '@/pages/close-tab';
 import { FloorPage } from '@/pages/floor';
+import { OnboardingPage } from '@/pages/onboarding';
 import { PizzeriaPage } from '@/pages/pizzeria';
 import { ProductsPage } from '@/pages/products';
 import { RegistryPage } from '@/pages/registry';
@@ -26,6 +27,7 @@ export function App() {
             <Route path="comandas/:id/fechar" element={<CloseTabPage />} />
             <Route path="produtos" element={<ProductsPage />} />
             <Route path="produtos/novo" element={<AddItemPage />} />
+            <Route path="comecar" element={<OnboardingPage />} />
             <Route path="produtos/montar" element={<BurgerBuilderPage />} />
             <Route path="produtos/pizzaria" element={<PizzeriaPage />} />
             <Route path="produtos/:id/montar" element={<BurgerBuilderPage />} />

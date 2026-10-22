@@ -1,4 +1,4 @@
-import { formatCents } from '@muquifo/contracts';
+import { type Category, formatCents } from '@muquifo/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Pizza } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -95,6 +95,117 @@ export const looksPizza = (name: string) => /pizza/i.test(name);
  * Monta a pizzaria pronta: categoria, tamanhos P/M/G, faixas com preço por
  * tamanho, sabores mais pedidos e borda. Reaproveita o que já existe pelo nome.
  */
+export async function applyPizzaKit({
+  category: chosen,
+  sectorId,
+  withFlavors = true,
+  withBorda = true,
+}: {
+  /** Nula: usa (ou cria) a categoria "Pizzas". */
+  category: Category | null;
+  sectorId: string | null;
+  withFlavors?: boolean;
+  withBorda?: boolean;
+}) {
+  const category =
+    chosen ??
+    (await api.categories()).find((c) => same(c.name, 'Pizzas')) ??
+    (await api.createCategory({ name: 'Pizzas' }));
+
+  // Tamanhos: reaproveita o produto de mesmo nome na categoria. Pizza de
+  // preço fixo vira tamanho (o preço passa a vir da faixa do sabor).
+  const products = await api.products({ status: 'all' });
+  const sizeIds = {} as Record<SizeKey, string>;
+  let sizesCreated = 0;
+  for (const s of kitSizes) {
+    const found = products.find(
+      (p) => p.active && p.categoryId === category.id && same(p.name, s.name),
+    );
+    if (found) {
+      sizeIds[s.key] = found.id;
+      if (found.maxFlavors === null) {
+        await api.updateProduct(found.id, {
+          version: found.version,
+          maxFlavors: s.maxFlavors,
+          priceCents: 0,
+        });
+        sizesCreated++;
+      }
+      continue;
+    }
+    const created = await api.createProduct({
+      categoryId: category.id,
+      sectorId,
+      name: s.name,
+      priceCents: 0,
+      maxFlavors: s.maxFlavors,
+      icon: '🍕',
+    });
+    sizeIds[s.key] = created.id;
+    sizesCreated++;
+  }
+
+  // Faixas: completa só os tamanhos que ainda não têm preço.
+  const tiers = await api.pizzaTiers({ status: 'all' });
+  const flavors = await api.pizzaFlavors({ status: 'all' });
+  let flavorsCreated = 0;
+  for (const [i, t] of kitTiers.entries()) {
+    const kitPrices = kitSizes.map((s) => ({
+      productId: sizeIds[s.key],
+      priceCents: t.prices[s.key],
+    }));
+    let tier = tiers.find((x) => same(x.name, t.name));
+    if (!tier) {
+      tier = await api.createPizzaTier({
+        name: t.name,
+        sortOrder: i,
+        prices: kitPrices,
+      });
+    } else {
+      const missing = kitPrices.filter(
+        (p) => !tier!.prices.some((x) => x.productId === p.productId),
+      );
+      if (missing.length || !tier.active) {
+        tier = await api.updatePizzaTier(tier.id, {
+          active: true,
+          prices: [...tier.prices, ...missing],
+        });
+      }
+    }
+    if (!withFlavors) continue;
+    for (const [j, [name, description]] of t.flavors.entries()) {
+      if (flavors.some((f) => same(f.name, name))) continue;
+      await api.createPizzaFlavor({
+        tierId: tier.id,
+        name,
+        description,
+        sortOrder: j,
+      });
+      flavorsCreated++;
+    }
+  }
+
+  let bordaLinked = false;
+  if (withBorda) {
+    const groups = await api.optionGroups({ status: 'all' });
+    const borda =
+      groups.find((g) => same(g.name, kitBorda.name)) ??
+      (await api.createOptionGroup({
+        name: kitBorda.name,
+        minSelect: 0,
+        maxSelect: 1,
+        options: kitBorda.options,
+      }));
+    if (!category.optionGroupIds.includes(borda.id)) {
+      await api.updateCategory(category.id, {
+        optionGroupIds: [...category.optionGroupIds, borda.id],
+      });
+      bordaLinked = true;
+    }
+  }
+  return { sizesCreated, flavorsCreated, bordaLinked };
+}
+
 export function PizzaKitDialog({
   open,
   onClose,
@@ -129,106 +240,16 @@ export function PizzaKitDialog({
   }, [open, categories.data, sectors.data]);
 
   const apply = useMutation({
-    mutationFn: async () => {
-      const category =
-        categoryId === NEW
-          ? (categories.data?.find((c) => same(c.name, 'Pizzas')) ??
-            (await api.createCategory({ name: 'Pizzas' })))
-          : categories.data!.find((c) => c.id === categoryId)!;
-
-      // Tamanhos: reaproveita o produto de mesmo nome na categoria. Pizza de
-      // preço fixo vira tamanho (o preço passa a vir da faixa do sabor).
-      const products = await api.products({ status: 'all' });
-      const sizeIds = {} as Record<SizeKey, string>;
-      let sizesCreated = 0;
-      for (const s of kitSizes) {
-        const found = products.find(
-          (p) =>
-            p.active && p.categoryId === category.id && same(p.name, s.name),
-        );
-        if (found) {
-          sizeIds[s.key] = found.id;
-          if (found.maxFlavors === null) {
-            await api.updateProduct(found.id, {
-              version: found.version,
-              maxFlavors: s.maxFlavors,
-              priceCents: 0,
-            });
-            sizesCreated++;
-          }
-          continue;
-        }
-        const created = await api.createProduct({
-          categoryId: category.id,
-          sectorId: sectorId === NONE ? null : sectorId,
-          name: s.name,
-          priceCents: 0,
-          maxFlavors: s.maxFlavors,
-        });
-        sizeIds[s.key] = created.id;
-        sizesCreated++;
-      }
-
-      // Faixas: completa só os tamanhos que ainda não têm preço.
-      const tiers = await api.pizzaTiers({ status: 'all' });
-      const flavors = await api.pizzaFlavors({ status: 'all' });
-      let flavorsCreated = 0;
-      for (const [i, t] of kitTiers.entries()) {
-        const kitPrices = kitSizes.map((s) => ({
-          productId: sizeIds[s.key],
-          priceCents: t.prices[s.key],
-        }));
-        let tier = tiers.find((x) => same(x.name, t.name));
-        if (!tier) {
-          tier = await api.createPizzaTier({
-            name: t.name,
-            sortOrder: i,
-            prices: kitPrices,
-          });
-        } else {
-          const missing = kitPrices.filter(
-            (p) => !tier!.prices.some((x) => x.productId === p.productId),
-          );
-          if (missing.length || !tier.active) {
-            tier = await api.updatePizzaTier(tier.id, {
-              active: true,
-              prices: [...tier.prices, ...missing],
-            });
-          }
-        }
-        if (!withFlavors) continue;
-        for (const [j, [name, description]] of t.flavors.entries()) {
-          if (flavors.some((f) => same(f.name, name))) continue;
-          await api.createPizzaFlavor({
-            tierId: tier.id,
-            name,
-            description,
-            sortOrder: j,
-          });
-          flavorsCreated++;
-        }
-      }
-
-      let bordaLinked = false;
-      if (withBorda) {
-        const groups = await api.optionGroups({ status: 'all' });
-        const borda =
-          groups.find((g) => same(g.name, kitBorda.name)) ??
-          (await api.createOptionGroup({
-            name: kitBorda.name,
-            minSelect: 0,
-            maxSelect: 1,
-            options: kitBorda.options,
-          }));
-        if (!category.optionGroupIds.includes(borda.id)) {
-          await api.updateCategory(category.id, {
-            optionGroupIds: [...category.optionGroupIds, borda.id],
-          });
-          bordaLinked = true;
-        }
-      }
-      return { sizesCreated, flavorsCreated, bordaLinked };
-    },
+    mutationFn: () =>
+      applyPizzaKit({
+        category:
+          categoryId === NEW
+            ? null
+            : (categories.data?.find((c) => c.id === categoryId) ?? null),
+        sectorId: sectorId === NONE ? null : sectorId,
+        withFlavors,
+        withBorda,
+      }),
     onSuccess: ({ sizesCreated, flavorsCreated, bordaLinked }) => {
       toast.success('Pizzaria montada', {
         description: [

@@ -121,12 +121,20 @@ export function FloorPage() {
         ) : active.length === 0 ? (
           <EmptyState
             icon={Armchair}
-            title="Nenhuma mesa cadastrada"
-            description="Cadastre as mesas do salão em Cadastros."
+            title="Vamos começar?"
+            description="Em um minuto montamos as mesas e o cardápio do seu negócio."
             action={
-              <Button variant="outline" onClick={() => navigate('/cadastros')}>
-                Ir para Cadastros
-              </Button>
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button size="lg" onClick={() => navigate('/comecar')}>
+                  Começar agora
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => navigate('/cadastros')}
+                >
+                  Só cadastrar mesas
+                </Button>
+              </div>
             }
           />
         ) : (

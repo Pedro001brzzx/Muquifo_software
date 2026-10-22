@@ -11,6 +11,7 @@ import {
   Search,
   Settings2,
   SlidersHorizontal,
+  Sparkles,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
@@ -97,6 +98,11 @@ export function SimpleMenu({ onComplete }: { onComplete: () => void }) {
             <Button variant="ghost" onClick={onComplete}>
               <Settings2 /> Modo completo
             </Button>
+            <Button variant="outline" asChild>
+              <Link to="/comecar">
+                <Sparkles /> Cardápio pronto
+              </Link>
+            </Button>
             <Button size="lg" asChild>
               <Link to="/produtos/novo">
                 <Plus /> Adicionar item
@@ -128,13 +134,20 @@ export function SimpleMenu({ onComplete }: { onComplete: () => void }) {
           <EmptyState
             icon={Plus}
             title="Seu cardápio está vazio"
-            description="Comece pelo primeiro item: leva menos de um minuto."
+            description="Diga o tipo do seu negócio e montamos um cardápio pronto para você ajustar."
             action={
-              <Button size="lg" asChild>
-                <Link to="/produtos/novo">
-                  <Plus /> Adicionar item
-                </Link>
-              </Button>
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button size="lg" asChild>
+                  <Link to="/comecar">
+                    <Sparkles /> Montar meu cardápio
+                  </Link>
+                </Button>
+                <Button size="lg" variant="outline" asChild>
+                  <Link to="/produtos/novo">
+                    <Plus /> Um item de cada vez
+                  </Link>
+                </Button>
+              </div>
             }
           />
         ) : sections.length === 0 ? (
