@@ -28,6 +28,8 @@ export const paymentSchema = z.object({
   status: paymentStatusSchema,
   cancelReason: z.string().nullable(),
   canceledAt: z.iso.datetime({ offset: true }).nullable(),
+  /** Caixa em que foi recebido (nulo em pagamentos anteriores ao controle de caixa). */
+  cashSessionId: z.uuid().nullable(),
   createdAt: z.iso.datetime({ offset: true }),
 });
 export type Payment = z.infer<typeof paymentSchema>;

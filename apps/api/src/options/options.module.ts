@@ -5,5 +5,6 @@ import { OptionGroupsService } from './option-groups.service.js';
 @Module({
   controllers: [OptionGroupsController],
   providers: [OptionGroupsService],
+  exports: [OptionGroupsService],
 })
 export class OptionsModule {}

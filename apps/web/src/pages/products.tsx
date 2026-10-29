@@ -13,6 +13,7 @@ import {
   Pencil,
   Pizza as PizzaIcon,
   Plus,
+  QrCode,
   Scale,
   Search,
   Sparkles,
@@ -152,6 +153,11 @@ function CompleteProducts({ onSimple }: { onSimple: () => void }) {
                 onClick={() => setCategoryDialog('new')}
               >
                 <FolderPlus /> Categoria
+              </Button>
+              <Button variant="outline" asChild>
+                <Link to="/qrcode">
+                  <QrCode /> QR Code
+                </Link>
               </Button>
               <Button variant="outline" asChild>
                 <Link to="/produtos/pizzaria">

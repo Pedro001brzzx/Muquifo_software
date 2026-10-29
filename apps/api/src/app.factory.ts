@@ -34,7 +34,7 @@ export async function createApp(
         ? true
         : env.CORS_ORIGINS.split(',').map((o) => o.trim()),
     // O padrão do @fastify/cors é só GET,HEAD,POST; sem isso o navegador bloqueia PATCH/DELETE.
-    methods: ['GET', 'HEAD', 'POST', 'PATCH', 'DELETE'],
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'],
     exposedHeaders: ['x-request-id', 'idempotent-replayed'],
   });
   app.enableShutdownHooks();

@@ -1,11 +1,14 @@
 import {
+  type AddCashMovementInput,
   type AddOrderItemInput,
   type AddPaymentInput,
   type ApiError,
   type CancelOrderInput,
   type CancelPaymentInput,
   type CancelTabInput,
+  type CashSession,
   type Category,
+  type CloseCashInput,
   type CreateCategoryInput,
   type CreateDiningTableInput,
   type CreateIngredientInput,
@@ -14,10 +17,14 @@ import {
   type CreatePizzaFlavorInput,
   type CreatePizzaTierInput,
   type CreateProductInput,
+  type CurrentCash,
+  type Dashboard,
   type DiningTable,
   type Health,
   IDEMPOTENCY_HEADER,
   type Ingredient,
+  type Network,
+  type OpenCashInput,
   type OpenTabInput,
   type OptionGroup,
   type Order,
@@ -26,6 +33,9 @@ import {
   type Product,
   type ProductionSector,
   type ProductStatusFilter,
+  type PublicMenu,
+  type PublishAddressInput,
+  type Restaurant,
   type TabDetail,
   type TabStatus,
   type TabSummary,
@@ -36,12 +46,19 @@ import {
   type UpdatePizzaTierInput,
   type UpdateProductAvailabilityInput,
   type UpdateProductInput,
+  type UpdateRestaurantInput,
 } from '@muquifo/contracts';
 import { newIdempotencyKey } from './lib/idempotency';
 
+/**
+ * Instalado, o app é servido pela própria API (mesma origem). Em
+ * desenvolvimento o Vite roda na 5173 e a API na 3000 da mesma máquina.
+ */
 export const API_URL: string =
   import.meta.env.VITE_API_URL ??
-  `${location.protocol}//${location.hostname}:3000/api/v1`;
+  (import.meta.env.DEV
+    ? `${location.protocol}//${location.hostname}:3000/api/v1`
+    : `${location.origin}/api/v1`);
 
 export class ApiRequestError extends Error {
   constructor(
@@ -154,6 +171,30 @@ export const api = {
   setAvailability: (id: string, input: UpdateProductAvailabilityInput) =>
     request<Product>('PATCH', `/products/${id}/availability`, input),
 
+  cashCurrent: () => request<CurrentCash>('GET', '/cash/current'),
+  cashSessions: (limit = 20) =>
+    request<CashSession[]>('GET', `/cash/sessions?limit=${limit}`),
+  openCash: (input: OpenCashInput) =>
+    request<CashSession>('POST', '/cash/sessions', input, idem),
+  addCashMovement: (id: string, input: AddCashMovementInput) =>
+    request<CashSession>('POST', `/cash/sessions/${id}/movements`, input, idem),
+  closeCash: (id: string, input: CloseCashInput) =>
+    request<CashSession>('POST', `/cash/sessions/${id}/close`, input, idem),
+  dashboard: (date?: string) =>
+    request<Dashboard>('GET', `/dashboard${query({ date })}`),
+
+  restaurant: () => request<Restaurant>('GET', '/restaurant'),
+  updateRestaurant: (input: UpdateRestaurantInput) =>
+    request<Restaurant>('PATCH', '/restaurant', input),
+
+  /** Cardápio público do QR code. */
+  publicMenu: () => request<PublicMenu>('GET', '/menu'),
+  network: () => request<Network>('GET', '/network'),
+  publishAddress: (input: PublishAddressInput) =>
+    request<Network>('PUT', '/network/published', input),
+  acknowledgeAddressChange: () =>
+    request<Network>('DELETE', '/network/pending-change'),
+
   tables: () => request<DiningTable[]>('GET', '/tables'),
   createTable: (input: CreateDiningTableInput) =>
     request<DiningTable>('POST', '/tables', input),
@@ -210,6 +251,11 @@ export const queryKeys = {
   pizzaTiers: ['pizza-tiers'],
   pizzaFlavors: ['pizza-flavors'],
   tables: ['tables'],
+  publicMenu: ['public-menu'],
+  restaurant: ['restaurant'],
+  cash: ['cash'],
+  dashboard: (date: string) => ['dashboard', date],
+  network: ['network'],
   tabs: (status?: TabStatus) => ['tabs', status ?? 'all'],
   tab: (id: string) => ['tab', id],
 } as const;

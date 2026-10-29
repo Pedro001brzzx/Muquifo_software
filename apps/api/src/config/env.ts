@@ -9,6 +9,13 @@ const envSchema = z.object({
     .enum(['true', 'false'])
     .default('true')
     .transform((v) => v === 'true'),
+  /** Aplica as migrations ao ligar (versão instalada: atualiza o banco sozinha). */
+  MIGRATE_ON_START: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  /** Pasta do build do app; vazio = apps/web/dist do monorepo, se existir. */
+  WEB_DIR: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

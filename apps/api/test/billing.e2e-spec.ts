@@ -9,6 +9,7 @@ import type {
 } from '@muquifo/contracts';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { createApp } from '../src/app.factory.js';
+import { ensureCashOpen } from './cash-helper.js';
 
 /** Fechamento de conta, pagamentos e liberação de mesa (RF07, RN04, RN05). */
 describe.skipIf(!process.env.DATABASE_URL)('Fechamento de conta (e2e)', () => {
@@ -59,6 +60,7 @@ describe.skipIf(!process.env.DATABASE_URL)('Fechamento de conta (e2e)', () => {
     app = await createApp({ logger: false });
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
+    await ensureCashOpen(app);
     const suffix = randomUUID().slice(0, 8);
     const category = (
       await call('POST', '/categories', { name: `Conta ${suffix}` })

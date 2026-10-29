@@ -2,27 +2,30 @@ import {
   errorCodes,
   formatCents,
   type OptionGroup,
+  type PizzaFlavor,
   type Product,
   parseCents,
 } from '@muquifo/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
+  ArrowRight,
   Check,
   ChevronRight,
   Loader2,
   Plus,
   Sparkles,
+  X,
 } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { toast } from 'sonner';
 import { ApiRequestError, api, queryKeys } from '@/api';
 import { FigurePicker, FigureTile } from '@/components/figure-picker';
 import { MoneyInput } from '@/components/money-input';
 import { PizzaKitDialog } from '@/components/pizza-kit';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { toastError } from '@/lib/errors';
 import { guessFigure, type ItemKind, kindFigure } from '@/lib/figures';
 import { ensureCategory, sectorFor } from '@/lib/menu-setup';
@@ -34,7 +37,7 @@ type Step =
   | 'name'
   | 'price'
   | 'pizza-tier'
-  | 'extras'
+  | 'details'
   | 'done';
 
 const kinds: {
@@ -43,48 +46,57 @@ const kinds: {
   /** "outra bebida", "outro lanche". */
   another: string;
   hint: string;
+  /** Exemplo de descrição para o cardápio do cliente. */
+  example: string;
 }[] = [
   {
     kind: 'burger',
     label: 'Lanche',
     another: 'outro lanche',
     hint: 'Hambúrguer, sanduíche, pastel',
+    example: 'Pão brioche, hambúrguer 150g, queijo e molho da casa',
   },
   {
     kind: 'pizza',
     label: 'Pizza',
     another: 'outro sabor',
     hint: 'Novo sabor de pizza',
+    example: 'molho, mussarela, calabresa, cebola',
   },
   {
     kind: 'drink',
     label: 'Bebida',
     another: 'outra bebida',
     hint: 'Refrigerante, suco, cerveja',
+    example: 'Lata 350ml, bem gelada',
   },
   {
     kind: 'side',
     label: 'Porção',
     another: 'outra porção',
     hint: 'Batata, petiscos',
+    example: '400g, serve 2 pessoas',
   },
   {
     kind: 'dessert',
     label: 'Sobremesa',
     another: 'outra sobremesa',
     hint: 'Doces, sorvete, açaí',
+    example: 'Fatia generosa com calda de chocolate',
   },
   {
     kind: 'dish',
     label: 'Prato',
     another: 'outro prato',
     hint: 'Prato feito, massa, carne',
+    example: 'Arroz, feijão, salada e fritas',
   },
   {
     kind: 'other',
     label: 'Outro',
     another: 'outro item',
     hint: 'Qualquer outro item',
+    example: '',
   },
 ];
 
@@ -93,9 +105,25 @@ const customizable: ItemKind[] = ['burger', 'side', 'dish'];
 
 const sizeLabel = (name: string) => name.replace(/^pizza\s+/i, '');
 
+/** Respostas da fase de detalhes; ficam guardadas ao voltar e avançar. */
+interface Details {
+  description: string;
+  removable: boolean | null;
+  chosen: { id: string; name: string }[];
+  off: string[];
+}
+
+const emptyDetails: Details = {
+  description: '',
+  removable: null,
+  chosen: [],
+  off: [],
+};
+
 /**
  * Assistente de cadastro: uma pergunta por tela, figuras grandes e o
- * resto preenchido sozinho (categoria, setor, figura).
+ * resto preenchido sozinho (categoria, setor, figura). Dá para voltar e
+ * avançar entre as fases; voltar depois de salvar edita o mesmo item.
  */
 export function AddItemPage() {
   const navigate = useNavigate();
@@ -118,16 +146,18 @@ export function AddItemPage() {
   });
 
   const [step, setStep] = useState<Step>('kind');
+  const [reached, setReached] = useState<Set<Step>>(new Set(['kind']));
   const [kind, setKind] = useState<ItemKind>('burger');
   const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
+  const [flavorDescription, setFlavorDescription] = useState('');
   const [figure, setFigure] = useState<string | null>(null);
   const [priceText, setPriceText] = useState('');
+  const [details, setDetails] = useState<Details>(emptyDetails);
   const [error, setError] = useState('');
   const [picking, setPicking] = useState(false);
   const [kitOpen, setKitOpen] = useState(false);
   const [created, setCreated] = useState<Product | null>(null);
-  const [doneText, setDoneText] = useState('');
+  const [flavor, setFlavor] = useState<PizzaFlavor | null>(null);
 
   const meta = kinds.find((k) => k.kind === kind)!;
   const shownFigure = figure ?? guessFigure(name) ?? kindFigure[kind];
@@ -135,123 +165,185 @@ export function AddItemPage() {
     (p) => p.active && p.maxFlavors !== null,
   );
   const pizzaReady = sizes.length > 0 && (tiers.data ?? []).length > 0;
+  const order: Step[] =
+    kind === 'pizza'
+      ? ['kind', 'name', 'pizza-tier', 'done']
+      : ['kind', 'name', 'price', 'details', 'done'];
+  const position = Math.max(
+    0,
+    order.indexOf(step === 'pizza-setup' ? 'name' : step),
+  );
 
+  function go(next: Step) {
+    setError('');
+    setStep(next);
+    setReached((r) => new Set(r).add(next));
+  }
+
+  /** Começa um item novo (o anterior já está salvo). */
   function reset(next: Step) {
     setName('');
-    setDescription('');
+    setFlavorDescription('');
     setFigure(null);
     setPriceText('');
+    setDetails(emptyDetails);
     setError('');
     setCreated(null);
+    setFlavor(null);
     setStep(next);
+    setReached(new Set(['kind', next]));
   }
 
   function chooseKind(k: ItemKind) {
+    // Trocar entre tipos comuns mantém o que já foi digitado (o salvo muda de categoria).
+    const keep = (name || created) && k !== 'pizza' && kind !== 'pizza';
     setKind(k);
+    if (keep) return go('name');
     reset(k === 'pizza' && !pizzaReady ? 'pizza-setup' : 'name');
   }
 
   function back() {
-    const previous: Partial<Record<Step, Step>> = {
-      'pizza-setup': 'kind',
-      name: 'kind',
-      price: 'name',
-      'pizza-tier': 'name',
-    };
-    const to = previous[step];
-    if (to) setStep(to);
-    else navigate('/produtos');
+    const i = order.indexOf(step === 'pizza-setup' ? 'name' : step);
+    if (i <= 0) return navigate('/produtos');
+    go(order[i - 1]);
+  }
+
+  const next = order[position + 1];
+  const canForward = !!next && reached.has(next);
+
+  /** Avançar faz o mesmo que o botão principal da fase (valida e salva). */
+  function forward() {
+    if (step === 'kind')
+      return go(kind === 'pizza' && !pizzaReady ? 'pizza-setup' : 'name');
+    if (step === 'name') return submitName();
+    if (step === 'price') return submitPrice();
+    if (step === 'pizza-tier' && flavor) return go('done');
+    if (step === 'details') return saveDetails.mutate();
   }
 
   const saveProduct = useMutation({
     mutationFn: async () => {
       const category = await ensureCategory(kind, [...(categories.data ?? [])]);
-      return api.createProduct({
+      const values = {
         categoryId: category.id,
         sectorId: sectorFor(kind, sectors.data),
         name: name.trim(),
         priceCents: parseCents(priceText) ?? 0,
         icon: shownFigure,
-      });
+      };
+      return created
+        ? api.updateProduct(created.id, { version: created.version, ...values })
+        : api.createProduct(values);
     },
     onSuccess: (p) => {
       setCreated(p);
-      setDoneText(
-        `${p.name} está no cardápio por ${formatCents(p.priceCents)}.`,
-      );
       void qc.invalidateQueries({ queryKey: queryKeys.products });
       void qc.invalidateQueries({ queryKey: queryKeys.categories });
-      setStep(customizable.includes(kind) ? 'extras' : 'done');
+      go('details');
     },
     onError: (e) => {
       if (e instanceof ApiRequestError && e.code === errorCodes.conflict) {
-        setError(e.message);
         setStep('name');
+        setError(e.message);
         return;
       }
       toastError(e);
     },
+  });
+
+  const saveDetails = useMutation({
+    mutationFn: () =>
+      api.updateProduct(created!.id, {
+        version: created!.version,
+        description: details.description.trim() || null,
+        ...(customizable.includes(kind) && {
+          ingredients: details.removable
+            ? details.chosen.map((c) => ({
+                ingredientId: c.id,
+                adjustable: true,
+              }))
+            : [],
+          excludedOptionGroupIds: details.off,
+        }),
+      }),
+    onSuccess: (p) => {
+      setCreated(p);
+      void qc.invalidateQueries({ queryKey: queryKeys.products });
+      go('done');
+    },
+    onError: toastError,
   });
 
   const saveFlavor = useMutation({
-    mutationFn: (tierId: string) =>
-      api.createPizzaFlavor({
+    mutationFn: (tierId: string) => {
+      const values = {
         tierId,
         name: name.trim(),
-        description: description.trim() || null,
-      }),
+        description: flavorDescription.trim() || null,
+      };
+      return flavor
+        ? api.updatePizzaFlavor(flavor.id, values)
+        : api.createPizzaFlavor(values);
+    },
     onSuccess: (f) => {
-      const tier = tiers.data?.find((t) => t.id === f.tierId);
-      setDoneText(
-        `A pizza de ${f.name} já pode ser pedida${tier ? ` (preço ${tier.name.toLowerCase()})` : ''}.`,
-      );
+      setFlavor(f);
       void qc.invalidateQueries({ queryKey: queryKeys.pizzaFlavors });
       void qc.invalidateQueries({ queryKey: queryKeys.pizzaTiers });
-      setStep('done');
+      go('done');
     },
     onError: (e) => {
       if (e instanceof ApiRequestError && e.code === errorCodes.conflict) {
-        setError('Já existe um sabor com esse nome.');
         setStep('name');
+        setError('Já existe um sabor com esse nome.');
         return;
       }
       toastError(e);
     },
   });
 
-  function submitName(e: FormEvent) {
-    e.preventDefault();
+  function submitName(e?: FormEvent) {
+    e?.preventDefault();
     if (!name.trim()) return setError('Escreva o nome.');
-    setError('');
-    setStep(kind === 'pizza' ? 'pizza-tier' : 'price');
+    go(kind === 'pizza' ? 'pizza-tier' : 'price');
   }
 
-  function submitPrice(e: FormEvent) {
-    e.preventDefault();
+  function submitPrice(e?: FormEvent) {
+    e?.preventDefault();
     const cents = parseCents(priceText);
     if (cents === null || cents <= 0) return setError('Escreva o preço.');
     setError('');
     saveProduct.mutate();
   }
 
-  const order: Step[] =
+  const flavorTier = tiers.data?.find((t) => t.id === flavor?.tierId);
+  const doneText =
     kind === 'pizza'
-      ? ['kind', 'name', 'pizza-tier', 'done']
-      : customizable.includes(kind)
-        ? ['kind', 'name', 'price', 'extras', 'done']
-        : ['kind', 'name', 'price', 'done'];
-  const position = Math.max(0, order.indexOf(step));
+      ? flavor &&
+        `A pizza de ${flavor.name} já pode ser pedida${flavorTier ? ` (preço ${flavorTier.name.toLowerCase()})` : ''}.`
+      : created &&
+        `${created.name} está no cardápio por ${formatCents(created.priceCents)}.`;
+  const busy =
+    saveProduct.isPending || saveDetails.isPending || saveFlavor.isPending;
 
   return (
     <div className="mx-auto flex min-h-[calc(100dvh-4rem)] w-full max-w-xl flex-col px-4 py-5 md:py-8">
-      <div className="mb-6 flex items-center justify-between gap-3">
-        {step === 'done' || step === 'extras' ? (
-          <span />
-        ) : (
-          <Button variant="ghost" size="sm" className="-ml-2" onClick={back}>
-            <ArrowLeft /> Voltar
-          </Button>
-        )}
+      <nav className="mb-6 grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+        <Button
+          variant="ghost"
+          className="-ml-2 justify-self-start"
+          disabled={busy}
+          onClick={back}
+        >
+          {step === 'kind' ? (
+            <>
+              <X /> Sair
+            </>
+          ) : (
+            <>
+              <ArrowLeft /> Voltar
+            </>
+          )}
+        </Button>
         <div className="flex gap-1.5" aria-hidden>
           {order.map((s, i) => (
             <span
@@ -263,7 +355,19 @@ export function AddItemPage() {
             />
           ))}
         </div>
-      </div>
+        {canForward && step !== 'done' ? (
+          <Button
+            variant="ghost"
+            className="-mr-2 justify-self-end"
+            disabled={busy}
+            onClick={forward}
+          >
+            Avançar <ArrowRight />
+          </Button>
+        ) : (
+          <span />
+        )}
+      </nav>
 
       {step === 'kind' && (
         <section className="space-y-5">
@@ -275,8 +379,14 @@ export function AddItemPage() {
               <button
                 key={k.kind}
                 type="button"
+                aria-pressed={reached.has('name') && k.kind === kind}
                 onClick={() => chooseKind(k.kind)}
-                className="flex flex-col items-center gap-2 rounded-2xl border bg-card p-4 text-center transition hover:border-primary/60 hover:bg-accent/50 active:scale-[0.98]"
+                className={cn(
+                  'flex flex-col items-center gap-2 rounded-2xl border bg-card p-4 text-center transition hover:border-primary/60 hover:bg-accent/50 active:scale-[0.98]',
+                  reached.has('name') &&
+                    k.kind === kind &&
+                    'border-primary bg-primary/10',
+                )}
               >
                 <FigureTile emoji={kindFigure[k.kind]} size="lg" />
                 <span className="text-lg font-semibold">{k.label}</span>
@@ -301,7 +411,7 @@ export function AddItemPage() {
             <Button
               size="lg"
               className="h-14 w-full text-lg"
-              onClick={() => reset('name')}
+              onClick={() => go('name')}
             >
               Pronto! Cadastrar um sabor <ChevronRight />
             </Button>
@@ -330,7 +440,7 @@ export function AddItemPage() {
           <div className="flex flex-col items-center gap-2">
             <button
               type="button"
-              onClick={() => setPicking(true)}
+              onClick={() => kind !== 'pizza' && setPicking(true)}
               className="rounded-3xl transition active:scale-95"
               aria-label="Trocar figura"
             >
@@ -374,10 +484,10 @@ export function AddItemPage() {
           {kind === 'pizza' && (
             <Input
               maxLength={300}
-              placeholder="Ingredientes (opcional): molho, mussarela, calabresa"
+              placeholder={`Ingredientes (opcional): ${meta.example}`}
               className="h-12"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              value={flavorDescription}
+              onChange={(e) => setFlavorDescription(e.target.value)}
             />
           )}
           {error && <p className="text-sm text-destructive">{error}</p>}
@@ -423,7 +533,7 @@ export function AddItemPage() {
             ) : (
               <Check />
             )}
-            Colocar no cardápio
+            {created ? 'Salvar e continuar' : 'Colocar no cardápio'}
           </Button>
         </form>
       )}
@@ -440,7 +550,10 @@ export function AddItemPage() {
                 type="button"
                 disabled={saveFlavor.isPending}
                 onClick={() => saveFlavor.mutate(t.id)}
-                className="flex w-full items-center gap-4 rounded-2xl border bg-card p-4 text-left transition hover:border-primary/60 hover:bg-accent/50 active:scale-[0.99] disabled:opacity-60"
+                className={cn(
+                  'flex w-full items-center gap-4 rounded-2xl border bg-card p-4 text-left transition hover:border-primary/60 hover:bg-accent/50 active:scale-[0.99] disabled:opacity-60',
+                  flavor?.tierId === t.id && 'border-primary bg-primary/10',
+                )}
               >
                 <span className="min-w-0 flex-1">
                   <span className="block text-lg font-semibold">{t.name}</span>
@@ -473,13 +586,15 @@ export function AddItemPage() {
         </section>
       )}
 
-      {step === 'extras' && created && (
-        <ExtrasStep
+      {step === 'details' && created && (
+        <DetailsStep
           product={created}
-          onDone={(changed) => {
-            if (changed) toast.success('Opções salvas');
-            setStep('done');
-          }}
+          withRecipe={customizable.includes(kind)}
+          example={meta.example}
+          value={details}
+          onChange={setDetails}
+          saving={saveDetails.isPending}
+          onSave={() => saveDetails.mutate()}
         />
       )}
 
@@ -498,7 +613,8 @@ export function AddItemPage() {
             <h1 className="text-2xl font-semibold tracking-tight">Pronto!</h1>
             <p className="text-lg text-muted-foreground">{doneText}</p>
             <p className="text-sm text-muted-foreground">
-              O garçom já vê no cardápio.
+              O garçom e o cardápio do QR code já mostram. Errou algo? Toque em
+              Voltar.
             </p>
           </div>
           <div className="space-y-2">
@@ -535,13 +651,23 @@ export function AddItemPage() {
   );
 }
 
-/** Perguntas opcionais de sim/não depois que o item já está no cardápio. */
-function ExtrasStep({
+/** Detalhes opcionais: descrição para o cliente e, em lanches, ingredientes e extras. */
+function DetailsStep({
   product,
-  onDone,
+  withRecipe,
+  example,
+  value,
+  onChange,
+  saving,
+  onSave,
 }: {
   product: Product;
-  onDone: (changed: boolean) => void;
+  withRecipe: boolean;
+  example: string;
+  value: Details;
+  onChange: (d: Details) => void;
+  saving: boolean;
+  onSave: () => void;
 }) {
   const qc = useQueryClient();
   const categories = useQuery({
@@ -551,15 +677,15 @@ function ExtrasStep({
   const groups = useQuery({
     queryKey: queryKeys.optionGroups,
     queryFn: () => api.optionGroups(),
+    enabled: withRecipe,
   });
   const library = useQuery({
     queryKey: queryKeys.ingredients,
     queryFn: () => api.ingredients(),
+    enabled: withRecipe,
   });
-  const [removable, setRemovable] = useState<boolean | null>(null);
-  const [chosen, setChosen] = useState<{ id: string; name: string }[]>([]);
   const [typed, setTyped] = useState('');
-  const [off, setOff] = useState<Set<string>>(new Set());
+  const set = (patch: Partial<Details>) => onChange({ ...value, ...patch });
 
   const offered = (
     categories.data?.find((c) => c.id === product.categoryId)?.optionGroupIds ??
@@ -572,7 +698,7 @@ function ExtrasStep({
   const suggestions = (library.data ?? [])
     .filter(
       (i) =>
-        !chosen.some((c) => c.id === i.id) &&
+        !value.chosen.some((c) => c.id === i.id) &&
         (!term || i.name.toLowerCase().includes(term)),
     )
     .slice(0, 18);
@@ -583,31 +709,12 @@ function ExtrasStep({
       return existing ?? api.createIngredient({ name: typed.trim() });
     },
     onSuccess: (i) => {
-      setChosen((c) => [...c, { id: i.id, name: i.name }]);
+      set({ chosen: [...value.chosen, { id: i.id, name: i.name }] });
       setTyped('');
       void qc.invalidateQueries({ queryKey: queryKeys.ingredients });
     },
     onError: toastError,
   });
-
-  const save = useMutation({
-    mutationFn: () =>
-      api.updateProduct(product.id, {
-        version: product.version,
-        ingredients: chosen.map((c) => ({
-          ingredientId: c.id,
-          adjustable: true,
-        })),
-        excludedOptionGroupIds: [...off],
-      }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: queryKeys.products });
-      onDone(true);
-    },
-    onError: toastError,
-  });
-
-  const changed = chosen.length > 0 || off.size > 0;
 
   return (
     <section className="space-y-6">
@@ -616,100 +723,118 @@ function ExtrasStep({
           {product.name} já está no cardápio!
         </h1>
         <p className="text-muted-foreground">
-          Duas perguntas rápidas (pode pular).
+          Mais alguns detalhes (tudo opcional).
         </p>
       </div>
 
-      <div className="space-y-3 rounded-2xl border bg-card p-4">
-        <h2 className="text-lg font-medium">
-          O cliente pode pedir para tirar algum ingrediente?
-        </h2>
-        <div className="grid grid-cols-2 gap-2">
-          {[
-            { value: false, label: 'Não' },
-            { value: true, label: 'Sim' },
-          ].map((o) => (
-            <Button
-              key={o.label}
-              type="button"
-              size="lg"
-              variant={removable === o.value ? 'default' : 'outline'}
-              className="h-12 text-base"
-              onClick={() => {
-                setRemovable(o.value);
-                if (!o.value) setChosen([]);
-              }}
-            >
-              {o.label}
-            </Button>
-          ))}
-        </div>
-        {removable && (
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              Toque nos ingredientes que vão no {product.name}:
-            </p>
-            {chosen.length > 0 && (
+      <div className="space-y-2 rounded-2xl border bg-card p-4">
+        <h2 className="text-lg font-medium">Descrição para o cliente</h2>
+        <p className="-mt-1 text-sm text-muted-foreground">
+          Aparece no cardápio do QR code.
+        </p>
+        <Textarea
+          rows={2}
+          maxLength={500}
+          placeholder={example ? `Ex.: ${example}` : 'Uma frase curta'}
+          className="text-base md:text-base"
+          value={value.description}
+          onChange={(e) => set({ description: e.target.value })}
+        />
+      </div>
+
+      {withRecipe && (
+        <div className="space-y-3 rounded-2xl border bg-card p-4">
+          <h2 className="text-lg font-medium">
+            O cliente pode pedir para tirar algum ingrediente?
+          </h2>
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { v: false, label: 'Não' },
+              { v: true, label: 'Sim' },
+            ].map((o) => (
+              <Button
+                key={o.label}
+                type="button"
+                size="lg"
+                variant={value.removable === o.v ? 'default' : 'outline'}
+                className="h-12 text-base"
+                onClick={() => set({ removable: o.v })}
+              >
+                {o.label}
+              </Button>
+            ))}
+          </div>
+          {value.removable && (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Toque nos ingredientes que vão no {product.name}:
+              </p>
+              {value.chosen.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {value.chosen.map((c) => (
+                    <Button
+                      key={c.id}
+                      type="button"
+                      size="sm"
+                      className="rounded-full"
+                      onClick={() =>
+                        set({
+                          chosen: value.chosen.filter((x) => x.id !== c.id),
+                        })
+                      }
+                    >
+                      <Check /> {c.name}
+                    </Button>
+                  ))}
+                </div>
+              )}
+              <form
+                className="flex gap-2"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (typed.trim()) addTyped.mutate();
+                }}
+              >
+                <Input
+                  placeholder="Procurar ou escrever outro"
+                  className="h-11"
+                  value={typed}
+                  onChange={(e) => setTyped(e.target.value)}
+                />
+                <Button
+                  type="submit"
+                  variant="outline"
+                  className="h-11"
+                  disabled={!typed.trim() || addTyped.isPending}
+                >
+                  <Plus /> Incluir
+                </Button>
+              </form>
               <div className="flex flex-wrap gap-2">
-                {chosen.map((c) => (
+                {suggestions.map((i) => (
                   <Button
-                    key={c.id}
+                    key={i.id}
                     type="button"
                     size="sm"
+                    variant="outline"
                     className="rounded-full"
-                    onClick={() =>
-                      setChosen((list) => list.filter((x) => x.id !== c.id))
-                    }
+                    onClick={() => {
+                      set({
+                        chosen: [...value.chosen, { id: i.id, name: i.name }],
+                      });
+                      setTyped('');
+                    }}
                   >
-                    <Check /> {c.name}
+                    <Plus /> {i.name}
                   </Button>
                 ))}
               </div>
-            )}
-            <form
-              className="flex gap-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (typed.trim()) addTyped.mutate();
-              }}
-            >
-              <Input
-                placeholder="Procurar ou escrever outro"
-                className="h-11"
-                value={typed}
-                onChange={(e) => setTyped(e.target.value)}
-              />
-              <Button
-                type="submit"
-                variant="outline"
-                className="h-11"
-                disabled={!typed.trim() || addTyped.isPending}
-              >
-                <Plus /> Incluir
-              </Button>
-            </form>
-            <div className="flex flex-wrap gap-2">
-              {suggestions.map((i) => (
-                <Button
-                  key={i.id}
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="rounded-full"
-                  onClick={() => {
-                    setChosen((c) => [...c, { id: i.id, name: i.name }]);
-                    setTyped('');
-                  }}
-                >
-                  <Plus /> {i.name}
-                </Button>
-              ))}
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
-      {offered.length > 0 && (
+      {withRecipe && offered.length > 0 && (
         <div className="space-y-3 rounded-2xl border bg-card p-4">
           <h2 className="text-lg font-medium">O garçom vai oferecer junto:</h2>
           <p className="-mt-2 text-sm text-muted-foreground">
@@ -717,18 +842,17 @@ function ExtrasStep({
           </p>
           <div className="space-y-2">
             {offered.map((g) => {
-              const on = !off.has(g.id);
+              const on = !value.off.includes(g.id);
               return (
                 <button
                   key={g.id}
                   type="button"
                   aria-pressed={on}
                   onClick={() =>
-                    setOff((s) => {
-                      const next = new Set(s);
-                      if (on) next.add(g.id);
-                      else next.delete(g.id);
-                      return next;
+                    set({
+                      off: on
+                        ? [...value.off, g.id]
+                        : value.off.filter((id) => id !== g.id),
                     })
                   }
                   className={cn(
@@ -757,17 +881,15 @@ function ExtrasStep({
         </div>
       )}
 
-      <div className="space-y-2">
-        <Button
-          size="lg"
-          className="h-14 w-full text-lg"
-          disabled={save.isPending}
-          onClick={() => (changed ? save.mutate() : onDone(false))}
-        >
-          {save.isPending ? <Loader2 className="animate-spin" /> : <Check />}
-          {changed ? 'Salvar e concluir' : 'Concluir'}
-        </Button>
-      </div>
+      <Button
+        size="lg"
+        className="h-14 w-full text-lg"
+        disabled={saving}
+        onClick={onSave}
+      >
+        {saving ? <Loader2 className="animate-spin" /> : <Check />}
+        Concluir
+      </Button>
     </section>
   );
 }

@@ -229,6 +229,7 @@ function toPayment(row: PaymentRow): Payment {
     status: row.status,
     cancelReason: row.cancelReason,
     canceledAt: iso(row.canceledAt),
+    cashSessionId: row.cashSessionId,
     createdAt: row.createdAt.toISOString(),
   };
 }

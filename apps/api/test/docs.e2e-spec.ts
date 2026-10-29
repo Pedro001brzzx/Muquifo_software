@@ -39,11 +39,20 @@ describe.skipIf(!process.env.DATABASE_URL)('Swagger (e2e)', () => {
 
   it('documenta todas as rotas com o prefixo /api/v1', () => {
     expect(Object.keys(doc.paths).sort()).toEqual([
+      '/api/v1/cash/current',
+      '/api/v1/cash/sessions',
+      '/api/v1/cash/sessions/{id}/close',
+      '/api/v1/cash/sessions/{id}/movements',
       '/api/v1/categories',
       '/api/v1/categories/{id}',
+      '/api/v1/dashboard',
       '/api/v1/health',
       '/api/v1/ingredients',
       '/api/v1/ingredients/{id}',
+      '/api/v1/menu',
+      '/api/v1/network',
+      '/api/v1/network/pending-change',
+      '/api/v1/network/published',
       '/api/v1/operations/{operationId}',
       '/api/v1/option-groups',
       '/api/v1/option-groups/{id}',
@@ -60,6 +69,7 @@ describe.skipIf(!process.env.DATABASE_URL)('Swagger (e2e)', () => {
       '/api/v1/products',
       '/api/v1/products/{id}',
       '/api/v1/products/{id}/availability',
+      '/api/v1/restaurant',
       '/api/v1/sectors',
       '/api/v1/tables',
       '/api/v1/tabs',

@@ -8,6 +8,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Loader2,
   Plus,
+  QrCode,
   Search,
   Settings2,
   SlidersHorizontal,
@@ -101,6 +102,11 @@ export function SimpleMenu({ onComplete }: { onComplete: () => void }) {
             <Button variant="outline" asChild>
               <Link to="/comecar">
                 <Sparkles /> Cardápio pronto
+              </Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link to="/qrcode">
+                <QrCode /> QR Code
               </Link>
             </Button>
             <Button size="lg" asChild>

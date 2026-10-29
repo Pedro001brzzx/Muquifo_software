@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   CreditCard,
   Loader2,
+  Lock,
   type LucideIcon,
   Minus,
   Plus,
@@ -26,7 +27,7 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
-import { api } from '@/api';
+import { api, queryKeys } from '@/api';
 import { PageBody } from '@/components/layout';
 import { centsToInput, MoneyInput } from '@/components/money-input';
 import { adjustmentsText } from '@/components/option-picker';
@@ -124,6 +125,11 @@ export function CloseTabPage() {
   const [confirmClose, setConfirmClose] = useState(false);
   const [refund, setRefund] = useState<Payment | null>(null);
 
+  const cash = useQuery({
+    queryKey: queryKeys.cash,
+    queryFn: api.cashCurrent,
+  });
+
   const update = (t: TabDetail) => {
     qc.setQueryData(['tab', id], t);
     void qc.invalidateQueries({ queryKey: ['tabs'] });
@@ -210,6 +216,21 @@ export function CloseTabPage() {
         <Receipt tab={t} {...receipt} />
 
         <div className="space-y-4 lg:sticky lg:top-6">
+          {settling &&
+            t.balanceCents > 0 &&
+            cash.data &&
+            !cash.data.session && (
+              <Alert variant="destructive">
+                <Lock />
+                <AlertTitle>Caixa fechado</AlertTitle>
+                <AlertDescription>
+                  <p>Abra o caixa para receber pagamentos.</p>
+                  <Button size="sm" className="mt-2" asChild>
+                    <Link to="/caixa">Abrir caixa</Link>
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
           {t.status === 'closed' && (
             <Alert>
               <CheckCircle2 />

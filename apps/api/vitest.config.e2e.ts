@@ -30,5 +30,8 @@ export default defineConfig({
     root: './',
     include: ['**/*.e2e-spec.ts'],
     globalSetup: ['./test/global-setup.ts'],
+    // Um arquivo por vez: o caixa é único (um aberto por vez) e o teste de
+    // caixa abre e fecha o turno que os outros usam para receber.
+    fileParallelism: false,
   },
 });

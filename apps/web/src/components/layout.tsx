@@ -1,29 +1,84 @@
 import { useQuery } from '@tanstack/react-query';
 import {
+  AlertTriangle,
+  ChartColumn,
   LayoutGrid,
   type LucideIcon,
   Package,
   ReceiptText,
   Settings2,
+  Smartphone,
   UtensilsCrossed,
+  Wallet,
 } from 'lucide-react';
-import type { ReactNode } from 'react';
-import { NavLink, Outlet } from 'react-router';
+import { type ReactNode, Suspense } from 'react';
+import { Link, NavLink, Outlet, useLocation } from 'react-router';
 import { API_URL, api, queryKeys } from '@/api';
 import { ThemeToggle } from '@/components/theme';
+import { Button } from '@/components/ui/button';
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { useNetwork } from '@/lib/network';
 import { cn } from '@/lib/utils';
 
-const nav: { to: string; label: string; icon: LucideIcon; end?: boolean }[] = [
+type NavItem = { to: string; label: string; icon: LucideIcon; end?: boolean };
+
+const nav: NavItem[] = [
   { to: '/', label: 'Salão', icon: LayoutGrid, end: true },
   { to: '/comandas', label: 'Comandas', icon: ReceiptText },
+  { to: '/caixa', label: 'Caixa', icon: Wallet },
+  { to: '/painel', label: 'Painel', icon: ChartColumn },
   { to: '/produtos', label: 'Produtos', icon: Package },
   { to: '/cadastros', label: 'Cadastros', icon: Settings2 },
 ];
+
+/** Fora da barra de baixo (já cheia); no celular vira ícone no topo. */
+const connectNav: NavItem = {
+  to: '/conectar',
+  label: 'Celulares',
+  icon: Smartphone,
+};
+
+/**
+ * O IP dos QR codes e celulares deixou de ser desta máquina: avisa em todas
+ * as telas, porque os celulares dos garçons podem ter parado.
+ */
+function AddressAlert() {
+  const network = useNetwork();
+  const { pathname } = useLocation();
+  const change = network.data?.pendingChange;
+  if (!(change || network.data?.addressChanged) || pathname === connectNav.to) {
+    return null;
+  }
+  return (
+    <div
+      role="alert"
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-destructive/30 bg-destructive/10 px-4 py-2.5 text-sm md:px-8"
+    >
+      <AlertTriangle className="size-4 shrink-0 text-destructive" />
+      <span className="flex-1">
+        {change ? (
+          <>
+            O endereço do sistema mudou para{' '}
+            <b className="font-mono">{change.to}</b> e já foi ajustado. QR codes
+            impressos e atalhos nos celulares precisam ser refeitos.
+          </>
+        ) : (
+          'O endereço do sistema mudou. QR codes e celulares podem ter parado de abrir.'
+        )}
+      </span>
+      <Link
+        to={connectNav.to}
+        className="font-semibold text-destructive underline underline-offset-2"
+      >
+        Resolver
+      </Link>
+    </div>
+  );
+}
 
 function Brand() {
   return (
@@ -99,7 +154,7 @@ function SideNav() {
         <Brand />
       </div>
       <nav className="flex flex-1 flex-col gap-1 px-3">
-        {nav.map(({ to, label, icon: Icon, end }) => (
+        {[...nav, connectNav].map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}
             to={to}
@@ -127,7 +182,7 @@ function SideNav() {
 
 function BottomNav() {
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
+    <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-6 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
       {nav.map(({ to, label, icon: Icon, end }) => (
         <NavLink
           key={to}
@@ -135,7 +190,7 @@ function BottomNav() {
           end={end}
           className={({ isActive }) =>
             cn(
-              'flex flex-col items-center gap-1 py-2.5 text-[11px] font-medium text-muted-foreground',
+              'flex flex-col items-center gap-1 py-2.5 text-[10px] font-medium text-muted-foreground',
               isActive && 'text-primary',
             )
           }
@@ -156,11 +211,20 @@ export function AppLayout() {
         <Brand />
         <div className="flex items-center gap-1">
           <ConnectionStatus compact />
+          <Button variant="ghost" size="icon" asChild>
+            <Link to={connectNav.to} aria-label="Celulares e tablets">
+              <Smartphone />
+            </Link>
+          </Button>
           <ThemeToggle />
         </div>
       </header>
       <main className="pb-24 md:pb-0 md:pl-60">
-        <Outlet />
+        <AddressAlert />
+        {/* Tela ainda carregando: menu e barra continuam no lugar. */}
+        <Suspense fallback={null}>
+          <Outlet />
+        </Suspense>
       </main>
       <BottomNav />
     </div>

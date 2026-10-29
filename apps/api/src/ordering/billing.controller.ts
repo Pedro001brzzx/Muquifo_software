@@ -60,6 +60,7 @@ export class BillingController {
     409: [
       notOpen,
       '`PAYMENT_EXCEEDS_BALANCE` — valor maior que o saldo; `details.balanceCents` traz o saldo.',
+      '`CASH_CLOSED` — não há caixa aberto.',
     ],
   })
   async addPayment(

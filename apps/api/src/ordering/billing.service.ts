@@ -10,6 +10,7 @@ import {
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { z } from 'zod';
+import { lockOpenSession } from '../cash/cash.service.js';
 import { AppException } from '../common/app-exception.js';
 import type { Transaction } from '../db/client.js';
 import { orderItems, orders, payments, tabs } from '../db/schema.js';
@@ -39,7 +40,10 @@ async function cancelDrafts(tx: Transaction, tabId: string, reason: string) {
 
 @Injectable()
 export class BillingService {
-  /** RF07: pagamento manual. Nunca passa do saldo; em dinheiro calcula o troco. */
+  /**
+   * RF07: pagamento manual. Nunca passa do saldo; em dinheiro calcula o troco.
+   * Só com caixa aberto: o pagamento fica no caixa do turno.
+   */
   async addPayment(
     tx: Transaction,
     tabId: string,
@@ -47,6 +51,7 @@ export class BillingService {
   ): Promise<TabDetail> {
     const tab = await lockTab(tx, tabId);
     assertTabAccepts(tab, 'settle');
+    const session = await lockOpenSession(tx);
     const { balanceCents } = await tabBalance(tx, tab.id);
     if (input.amountCents > balanceCents) {
       throw new AppException(
@@ -67,6 +72,7 @@ export class BillingService {
         input.receivedCents === undefined
           ? 0
           : input.receivedCents - input.amountCents,
+      cashSessionId: session.id,
     });
     await touchTab(tx, tab.id);
     return getTab(tx, tab.id);

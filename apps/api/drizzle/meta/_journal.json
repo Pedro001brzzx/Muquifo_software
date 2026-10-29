@@ -64,6 +64,34 @@
       "when": 1792623220307,
       "tag": "0008_product_icon",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792645089269,
+      "tag": "0009_cash_register",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793310449786,
+      "tag": "0010_restaurant",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793311555782,
+      "tag": "0011_network_address",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793313218590,
+      "tag": "0012_address_follow",
+      "breakpoints": true
     }
   ]
 }

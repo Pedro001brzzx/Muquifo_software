@@ -483,6 +483,106 @@ export const paymentMethod = pgEnum('payment_method', [
 ]);
 export const paymentStatus = pgEnum('payment_status', ['active', 'canceled']);
 
+// ---------- Caixa ----------
+
+export const cashSessionStatus = pgEnum('cash_session_status', [
+  'open',
+  'closed',
+]);
+export const cashMovementKind = pgEnum('cash_movement_kind', [
+  'withdrawal',
+  'reinforcement',
+]);
+
+/**
+ * Turno de caixa. Só um aberto por vez. No fechamento, o esperado é
+ * congelado junto com o contado, para estornos posteriores não mudarem o histórico.
+ */
+export const cashSessions = pgTable(
+  'cash_sessions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    number: integer('number').notNull().generatedAlwaysAsIdentity(),
+    status: cashSessionStatus('status').notNull().default('open'),
+    openedBy: text('opened_by').notNull(),
+    openedAt: timestamp('opened_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    openingFloatCents: integer('opening_float_cents').notNull(),
+    closedBy: text('closed_by'),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    expectedCashCents: integer('expected_cash_cents'),
+    expectedCreditCents: integer('expected_credit_cents'),
+    expectedDebitCents: integer('expected_debit_cents'),
+    expectedPixCents: integer('expected_pix_cents'),
+    countedCashCents: integer('counted_cash_cents'),
+    countedCreditCents: integer('counted_credit_cents'),
+    countedDebitCents: integer('counted_debit_cents'),
+    countedPixCents: integer('counted_pix_cents'),
+    notes: text('notes'),
+    version: integer('version').notNull().default(1),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex('cash_sessions_number_uq').on(t.number),
+    // Garante no banco que nunca há dois caixas abertos.
+    uniqueIndex('cash_sessions_one_open_uq')
+      .on(t.status)
+      .where(sql`${t.status} = 'open'`),
+    check('cash_sessions_float_nonnegative', sql`${t.openingFloatCents} >= 0`),
+    check(
+      'cash_sessions_closed_complete',
+      sql`${t.status} = 'open' or (${t.closedAt} is not null and ${t.countedCashCents} is not null and ${t.expectedCashCents} is not null)`,
+    ),
+  ],
+);
+
+/** Identidade do restaurante: uma linha só (id = 1), mostrada no cardápio do cliente. */
+export const restaurant = pgTable(
+  'restaurant',
+  {
+    id: integer('id').primaryKey().default(1),
+    name: text('name').notNull().default(''),
+    tagline: text('tagline'),
+    notice: text('notice'),
+    /** IP que está nos QR codes e nos celulares; serve para avisar se mudar. */
+    publishedAddress: text('published_address'),
+    /** O dono confirmou que reservou esse IP no roteador (DHCP). */
+    addressReserved: boolean('address_reserved').notNull().default(false),
+    /** Última troca automática de IP (o servidor segue o IP novo sozinho). */
+    previousAddress: text('previous_address'),
+    previousReserved: boolean('previous_reserved').notNull().default(false),
+    addressChangedAt: timestamp('address_changed_at', { withTimezone: true }),
+    /** O dono já viu o aviso da última troca. */
+    addressChangeSeen: boolean('address_change_seen').notNull().default(true),
+    version: integer('version').notNull().default(1),
+    ...timestamps,
+  },
+  (t) => [check('restaurant_single_row', sql`${t.id} = 1`)],
+);
+
+/** Sangria (retirada) ou suprimento (reforço) de dinheiro, sempre com motivo. */
+export const cashMovements = pgTable(
+  'cash_movements',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    sessionId: uuid('session_id')
+      .notNull()
+      .references(() => cashSessions.id, { onDelete: 'restrict' }),
+    kind: cashMovementKind('kind').notNull(),
+    amountCents: integer('amount_cents').notNull(),
+    reason: text('reason').notNull(),
+    operator: text('operator'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index('cash_movements_session_idx').on(t.sessionId),
+    check('cash_movements_amount_positive', sql`${t.amountCents} > 0`),
+  ],
+);
+
 /**
  * Pagamento manual registrado no caixa (RF07). `amountCents` é o que abate da conta;
  * em dinheiro, `receivedCents` é o valor entregue e `changeCents` o troco.
@@ -503,10 +603,15 @@ export const payments = pgTable(
     status: paymentStatus('status').notNull().default('active'),
     cancelReason: text('cancel_reason'),
     canceledAt: timestamp('canceled_at', { withTimezone: true }),
+    /** Caixa aberto no momento do pagamento. */
+    cashSessionId: uuid('cash_session_id').references(() => cashSessions.id, {
+      onDelete: 'restrict',
+    }),
     ...timestamps,
   },
   (t) => [
     index('payments_tab_idx').on(t.tabId),
+    index('payments_cash_session_idx').on(t.cashSessionId),
     check('payments_amount_positive', sql`${t.amountCents} > 0`),
     check('payments_change_nonnegative', sql`${t.changeCents} >= 0`),
     check(

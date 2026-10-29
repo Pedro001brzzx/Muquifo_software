@@ -45,4 +45,7 @@ export const errorCodes = {
   invalidFlavors: 'INVALID_FLAVORS',
   flavorUnavailable: 'FLAVOR_UNAVAILABLE',
   pizzaTierInUse: 'PIZZA_TIER_IN_USE',
+  cashClosed: 'CASH_CLOSED',
+  cashAlreadyOpen: 'CASH_ALREADY_OPEN',
+  cashInsufficient: 'CASH_INSUFFICIENT',
 } as const;
