@@ -1,0 +1,40 @@
+MUQUIFO - gestão do salão
+=========================
+
+COMO LIGAR
+  Dois cliques em Muquifo.exe (ou no atalho "Muquifo"). Ele aparece no
+  canto do relógio do Windows (perto do relógio) e abre o sistema no
+  navegador. Na primeira vez ele cria o banco de dados (menos de um minuto).
+
+CELULARES E TABLETS
+  Clique com o botão direito no ícone perto do relógio > "Celulares e tablets".
+  Lá tem o QR code para abrir o sistema no celular e o passo a passo para
+  deixar o endereço fixo no roteador. Se o endereço mudar mesmo assim, o
+  Muquifo passa a usar o novo sozinho e avisa para refazer os QR codes.
+
+LIGAR SOZINHO
+  Botão direito no ícone > "Ligar junto com o Windows".
+
+BACKUP
+  O Muquifo guarda uma cópia do banco todo dia e ao ser desligado, em
+  dados\backups (as 14 mais recentes).
+  - "Fazer backup agora": cópia na hora.
+  - "Restaurar um backup...": volta o sistema para uma cópia (antes, ele
+    guarda uma cópia de agora, por segurança).
+  - Cópia fora do computador (recomendado): em dados\config.env, preencha
+    BACKUP_EXTRA_DIR com uma pasta do pendrive ou do OneDrive/Google Drive.
+    Ex.: BACKUP_EXTRA_DIR=D:\Backups Muquifo
+
+ONDE FICAM OS DADOS
+  Tudo do restaurante fica na pasta "dados" ao lado deste arquivo:
+    dados\postgres    o banco de dados (cardápio, comandas, caixa...)
+    dados\backups     as cópias do banco
+    dados\config.env  a senha do banco, criada na instalação
+  Nunca apague essa pasta. Desinstalar o Muquifo não apaga os dados.
+
+DESLIGAR
+  Botão direito no ícone > "Desligar o Muquifo". Os celulares e o
+  cardápio do QR code param até ligar de novo.
+
+PROBLEMAS
+  Os registros ficam na pasta "logs" (servidor.log, banco.log e muquifo.log).

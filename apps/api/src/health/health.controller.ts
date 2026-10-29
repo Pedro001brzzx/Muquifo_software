@@ -7,10 +7,16 @@ import type { Database } from '../db/client.js';
 import { DB } from '../db/database.module.js';
 import { ApiZodResponse } from '../openapi/api-docs.js';
 
-// Mesmo caminho relativo em src/ (testes) e dist/ (produção).
-const { version } = JSON.parse(
-  readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
-) as { version: string };
+// A versão instalada (servidor num arquivo só) recebe a versão gravada no
+// build (scripts/bundle-api.mjs); no monorepo, mesmo caminho relativo em
+// src/ (testes) e dist/.
+const version =
+  process.env.MUQUIFO_VERSION ??
+  (
+    JSON.parse(
+      readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
+    ) as { version: string }
+  ).version;
 
 @ApiTags('Sistema')
 @Controller('health')

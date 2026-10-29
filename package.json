@@ -1,12 +1,17 @@
 {
   "name": "muquifo-software",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
   "packageManager": "pnpm@12.4.2",
   "scripts": {
     "build": "pnpm -r build",
+    "start": "pnpm --filter @muquifo/api start:prod",
+    "servidor": "pnpm run build && pnpm run db:migrate && pnpm run start",
+    "empacotar": "pwsh -NoProfile -File scripts/empacotar.ps1",
+    "instalador": "pwsh -NoProfile -File scripts/empacotar.ps1 -Instalador",
+    "icones": "node scripts/gerar-icones.mjs",
     "dev:api": "pnpm --filter @muquifo/contracts build && pnpm --filter @muquifo/api start:dev",
     "dev:web": "pnpm --filter @muquifo/contracts build && pnpm --filter @muquifo/web dev",
     "db:generate": "pnpm --filter @muquifo/api db:generate",

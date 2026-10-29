@@ -11,7 +11,7 @@ async function bootstrap() {
   const env = loadEnv();
   const logger = new Logger('Bootstrap');
   if (env.MIGRATE_ON_START) {
-    await runMigrations(env.DATABASE_URL);
+    await runMigrations(env.DATABASE_URL, env.MIGRATIONS_DIR);
     logger.log('Banco de dados atualizado.');
   }
   const app = await createApp();

@@ -14,6 +14,8 @@ const envSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
+  /** Pasta das migrations; vazio = apps/api/drizzle do monorepo. */
+  MIGRATIONS_DIR: z.string().optional(),
   /** Pasta do build do app; vazio = apps/web/dist do monorepo, se existir. */
   WEB_DIR: z.string().optional(),
 });
