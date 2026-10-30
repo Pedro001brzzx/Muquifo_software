@@ -462,7 +462,8 @@ function CashCard({ d }: { d: Dashboard }) {
                       : paymentMethodLabel[m]}
                   </dt>
                   <dd className="font-semibold tabular">
-                    {formatCents(s.expected[m])}
+                    {/* O painel é só do dono, que sempre recebe o esperado. */}
+                    {s.expected ? formatCents(s.expected[m]) : '—'}
                   </dd>
                 </div>
               ))}

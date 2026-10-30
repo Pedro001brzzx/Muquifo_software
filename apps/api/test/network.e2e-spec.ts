@@ -1,10 +1,10 @@
 import type { Network } from '@muquifo/contracts';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { eq } from 'drizzle-orm';
-import { createApp } from '../src/app.factory.js';
 import type { Database } from '../src/db/client.js';
 import { DB } from '../src/db/database.module.js';
 import { restaurant } from '../src/db/schema.js';
+import { createTestApp } from './auth-helper.js';
 
 /** IP dos QR codes e celulares: reserva no roteador e alarme de mudança. */
 describe.skipIf(!process.env.DATABASE_URL)('Rede local (e2e)', () => {
@@ -17,7 +17,7 @@ describe.skipIf(!process.env.DATABASE_URL)('Rede local (e2e)', () => {
     });
 
   beforeAll(async () => {
-    app = await createApp({ logger: false });
+    app = await createTestApp();
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
   });

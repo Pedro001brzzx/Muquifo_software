@@ -16,6 +16,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { z } from 'zod';
+import { MinRole } from '../auth/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import {
   ApiErrors,
@@ -56,6 +57,7 @@ export class OptionGroupsController {
     return this.groups.list(query);
   }
 
+  @MinRole('owner')
   @Post()
   @ApiOperation({
     summary: 'Cria grupo de complementos',
@@ -72,6 +74,7 @@ export class OptionGroupsController {
     return this.groups.create(body);
   }
 
+  @MinRole('owner')
   @Patch(':id')
   @ApiOperation({
     summary: 'Edita grupo de complementos',

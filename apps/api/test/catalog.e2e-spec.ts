@@ -7,7 +7,7 @@ import type {
   TabDetail,
 } from '@muquifo/contracts';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { createApp } from '../src/app.factory.js';
+import { createTestApp } from './auth-helper.js';
 
 /** Cadastro de produtos e categorias pela administração. */
 describe.skipIf(!process.env.DATABASE_URL)('Cadastro de produtos (e2e)', () => {
@@ -41,7 +41,7 @@ describe.skipIf(!process.env.DATABASE_URL)('Cadastro de produtos (e2e)', () => {
     ).json<Product>();
 
   beforeAll(async () => {
-    app = await createApp({ logger: false });
+    app = await createTestApp();
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
   });

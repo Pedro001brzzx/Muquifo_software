@@ -9,7 +9,7 @@ import type {
   TabDetail,
 } from '@muquifo/contracts';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { createApp } from '../src/app.factory.js';
+import { createTestApp } from './auth-helper.js';
 
 /** Montagem de lanches: ingredientes, ajustes, grupo desligado e combo com bebida. */
 describe.skipIf(!process.env.DATABASE_URL)('Lanches (e2e)', () => {
@@ -49,7 +49,7 @@ describe.skipIf(!process.env.DATABASE_URL)('Lanches (e2e)', () => {
     });
 
   beforeAll(async () => {
-    app = await createApp({ logger: false });
+    app = await createTestApp();
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
     [pao, frango, alface, tomate] = await Promise.all(

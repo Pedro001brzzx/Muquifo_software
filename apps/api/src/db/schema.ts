@@ -537,6 +537,78 @@ export const cashSessions = pgTable(
   ],
 );
 
+export const userRole = pgEnum('user_role', ['owner', 'cashier', 'waiter']);
+
+/** Equipe: entra tocando no nome e digitando o PIN. Nunca é apagado, só desativado. */
+export const users = pgTable(
+  'users',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: text('name').notNull(),
+    role: userRole('role').notNull(),
+    /** scrypt$<salt>$<hash> (base64); o PIN em si nunca é guardado. */
+    pinHash: text('pin_hash').notNull(),
+    active: boolean('active').notNull().default(true),
+    /** PIN errado seguidas; na 5ª o usuário fica bloqueado por 5 minutos. */
+    failedAttempts: integer('failed_attempts').notNull().default(0),
+    lockedUntil: timestamp('locked_until', { withTimezone: true }),
+    version: integer('version').notNull().default(1),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex('users_name_uq').on(sql`lower(${t.name})`)],
+);
+
+/** Aparelho logado. Guarda só o hash do token (quem ler o banco não entra). */
+export const authSessions = pgTable(
+  'auth_sessions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tokenHash: text('token_hash').notNull(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    ip: text('ip'),
+    userAgent: text('user_agent'),
+  },
+  (t) => [
+    uniqueIndex('auth_sessions_token_uq').on(t.tokenHash),
+    index('auth_sessions_user_idx').on(t.userId),
+  ],
+);
+
+/**
+ * Registro de quem fez o quê (entradas, aprovações, equipe). Encadeado: cada
+ * linha guarda o hash da anterior, então apagar ou mudar uma linha no meio
+ * quebra a corrente e aparece na conferência.
+ */
+export const auditEvents = pgTable(
+  'audit_events',
+  {
+    id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
+    at: timestamp('at', { withTimezone: true }).notNull(),
+    action: text('action').notNull(),
+    actorId: uuid('actor_id').references(() => users.id, {
+      onDelete: 'restrict',
+    }),
+    approverId: uuid('approver_id').references(() => users.id, {
+      onDelete: 'restrict',
+    }),
+    target: text('target'),
+    details: jsonb('details'),
+    prevHash: text('prev_hash').notNull(),
+    hash: text('hash').notNull(),
+  },
+  (t) => [index('audit_events_at_idx').on(t.at)],
+);
+
 /** Identidade do restaurante: uma linha só (id = 1), mostrada no cardápio do cliente. */
 export const restaurant = pgTable(
   'restaurant',
@@ -555,6 +627,8 @@ export const restaurant = pgTable(
     addressChangedAt: timestamp('address_changed_at', { withTimezone: true }),
     /** O dono já viu o aviso da última troca. */
     addressChangeSeen: boolean('address_change_seen').notNull().default(true),
+    /** Código de recuperação do PIN de dono (hash), mostrado só na configuração. */
+    recoveryCodeHash: text('recovery_code_hash'),
     version: integer('version').notNull().default(1),
     ...timestamps,
   },

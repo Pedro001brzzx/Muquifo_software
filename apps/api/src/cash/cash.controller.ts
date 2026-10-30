@@ -1,5 +1,6 @@
 import {
   addCashMovementSchema,
+  type CurrentUser,
   cashSessionSchema,
   closeCashSchema,
   currentCashSchema,
@@ -22,6 +23,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
 import type { z } from 'zod';
+import { AuthUser, MinRole } from '../auth/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import {
   ApiIdempotent,
@@ -43,6 +45,7 @@ const session = (status: number, description: string) => ({
 const closed = '`CASH_CLOSED` — o caixa já foi fechado.';
 
 @ApiTags('Caixa')
+@MinRole('cashier')
 @Controller('cash')
 export class CashController {
   constructor(
@@ -60,8 +63,13 @@ export class CashController {
     name: 'CurrentCash',
     schema: currentCashSchema,
   })
-  async current() {
-    return { session: await this.cash.current() };
+  async current(@AuthUser() user: CurrentUser) {
+    const session = await this.cash.current();
+    // Fechamento cego de verdade: com o caixa aberto, só o dono vê o esperado.
+    if (session && user.role !== 'owner') {
+      return { session: { ...session, received: null, expected: null } };
+    }
+    return { session };
   }
 
   @Get('sessions')
@@ -88,16 +96,17 @@ export class CashController {
     @Headers(IDEMPOTENCY_HEADER) key: string | undefined,
     @Body(new ZodValidationPipe(openCashSchema))
     body: z.output<typeof openCashSchema>,
+    @AuthUser() user: CurrentUser,
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
     const result = await this.idempotency.execute(
       {
         key,
         scope: 'POST /cash/sessions',
-        payload: body,
+        payload: { body, by: user.id },
         statusCode: HttpStatus.CREATED,
       },
-      (tx) => this.cash.open(tx, body),
+      (tx) => this.cash.open(tx, body, user.name),
     );
     return sendIdempotent(reply, result);
   }
@@ -120,6 +129,7 @@ export class CashController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body(new ZodValidationPipe(addCashMovementSchema))
     body: z.output<typeof addCashMovementSchema>,
+    @AuthUser() user: CurrentUser,
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
     const result = await this.idempotency.execute(
@@ -129,7 +139,7 @@ export class CashController {
         payload: { id, body },
         statusCode: HttpStatus.CREATED,
       },
-      (tx) => this.cash.addMovement(tx, id, body),
+      (tx) => this.cash.addMovement(tx, id, body, user.name),
     );
     return sendIdempotent(reply, result);
   }
@@ -154,6 +164,7 @@ export class CashController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body(new ZodValidationPipe(closeCashSchema))
     body: z.output<typeof closeCashSchema>,
+    @AuthUser() user: CurrentUser,
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
     const result = await this.idempotency.execute(
@@ -163,7 +174,7 @@ export class CashController {
         payload: { id, body },
         statusCode: HttpStatus.OK,
       },
-      (tx) => this.cash.close(tx, id, body),
+      (tx) => this.cash.close(tx, id, body, user.name),
     );
     return sendIdempotent(reply, result);
   }

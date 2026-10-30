@@ -21,6 +21,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { z } from 'zod';
+import { MinRole } from '../auth/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import {
   ApiErrors,
@@ -68,6 +69,7 @@ export class CatalogController {
     return this.catalog.listCategories();
   }
 
+  @MinRole('owner')
   @Post('categories')
   @ApiOperation({ summary: 'Cria categoria' })
   @ApiZodBody(createCategorySchema)
@@ -88,6 +90,7 @@ export class CatalogController {
     return this.catalog.createCategory(body);
   }
 
+  @MinRole('owner')
   @Patch('categories/:id')
   @ApiOperation({
     summary: 'Edita ou arquiva categoria',
@@ -139,6 +142,7 @@ export class CatalogController {
     return this.catalog.listProducts(query);
   }
 
+  @MinRole('owner')
   @Post('products')
   @ApiOperation({
     summary: 'Cria produto',
@@ -167,6 +171,7 @@ export class CatalogController {
     return this.catalog.createProduct(body);
   }
 
+  @MinRole('owner')
   @Patch('products/:id')
   @ApiOperation({
     summary: 'Edita produto',

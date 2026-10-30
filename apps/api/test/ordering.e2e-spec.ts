@@ -10,8 +10,8 @@ import type {
 } from '@muquifo/contracts';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import type pg from 'pg';
-import { createApp } from '../src/app.factory.js';
 import { PG_POOL } from '../src/db/database.module.js';
+import { createTestApp } from './auth-helper.js';
 
 /**
  * Regras de comandas e pedidos (RF03–RF05, RN02, RN05, RNF03, RNF04).
@@ -48,7 +48,7 @@ describe.skipIf(!process.env.DATABASE_URL)('Comandas e pedidos (e2e)', () => {
     ).json<Order>();
 
   beforeAll(async () => {
-    app = await createApp({ logger: false });
+    app = await createTestApp();
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
     pool = app.get(PG_POOL);

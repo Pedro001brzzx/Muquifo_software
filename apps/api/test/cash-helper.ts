@@ -12,7 +12,7 @@ export async function ensureCashOpen(app: NestFastifyApplication) {
     await app.inject({
       method: 'POST',
       url: '/api/v1/cash/sessions',
-      payload: { operator: 'Testes', openingFloatCents: 0 },
+      payload: { openingFloatCents: 0 },
       headers: { 'idempotency-key': randomUUID() },
     })
   ).json();

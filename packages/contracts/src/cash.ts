@@ -27,8 +27,6 @@ export const methodTotalsSchema = z.object({
 });
 export type MethodTotals = z.infer<typeof methodTotalsSchema>;
 
-const operatorSchema = z.string().trim().min(1).max(60);
-
 export const cashMovementSchema = z.object({
   id: z.uuid(),
   kind: cashMovementKindSchema,
@@ -51,12 +49,15 @@ export const cashSessionSchema = z.object({
   notes: z.string().nullable(),
   version: z.number().int(),
   paymentCount: z.number().int(),
-  /** Pagamentos ativos recebidos neste caixa. */
-  received: methodTotalsSchema,
+  /**
+   * Pagamentos ativos recebidos neste caixa. Nulo (com `expected`) para quem
+   * não é dono enquanto o caixa está aberto: fechamento cego.
+   */
+  received: methodTotalsSchema.nullable(),
   withdrawalsCents: centsSchema,
   reinforcementsCents: centsSchema,
   /** Dinheiro = fundo + recebido + suprimentos − sangrias. Congelado no fechamento. */
-  expected: methodTotalsSchema,
+  expected: methodTotalsSchema.nullable(),
   /** O que o operador contou (só depois de fechado). */
   counted: methodTotalsSchema.nullable(),
   /** Contado − esperado: negativo = faltou. */
@@ -70,8 +71,9 @@ export const currentCashSchema = z.object({
 });
 export type CurrentCash = z.infer<typeof currentCashSchema>;
 
+// Quem abre, movimenta e fecha é sempre o usuário logado (registrado pela API).
+
 export const openCashSchema = z.object({
-  operator: operatorSchema,
   /** Fundo de troco contado na abertura. */
   openingFloatCents: centsSchema,
 });
@@ -81,14 +83,12 @@ export const addCashMovementSchema = z.object({
   kind: cashMovementKindSchema,
   amountCents: centsSchema.refine((v) => v > 0, 'Informe um valor.'),
   reason: z.string().trim().min(3).max(300),
-  operator: operatorSchema.nullable().default(null),
 });
 export type AddCashMovementInput = z.input<typeof addCashMovementSchema>;
 
 /** Fechamento cego: o que foi contado em cada forma, sem ver o esperado. */
 export const closeCashSchema = z.object({
   version: z.number().int().positive(),
-  operator: operatorSchema,
   counted: z.object({
     cash: centsSchema,
     credit: centsSchema,

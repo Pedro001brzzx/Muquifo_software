@@ -2,11 +2,13 @@ import { dashboardQuerySchema, dashboardSchema } from '@muquifo/contracts';
 import { Controller, Get, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { z } from 'zod';
+import { MinRole } from '../auth/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { ApiZodQuery, ApiZodResponse } from '../openapi/api-docs.js';
 import { DashboardService } from './dashboard.service.js';
 
 @ApiTags('Painel')
+@MinRole('owner')
 @Controller('dashboard')
 export class DashboardController {
   constructor(private readonly dashboard: DashboardService) {}

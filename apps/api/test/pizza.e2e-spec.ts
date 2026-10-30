@@ -10,7 +10,7 @@ import type {
   TabDetail,
 } from '@muquifo/contracts';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { createApp } from '../src/app.factory.js';
+import { createTestApp } from './auth-helper.js';
 
 /** Pizzaria: tamanhos, faixas com preço por tamanho, sabores e borda. */
 describe.skipIf(!process.env.DATABASE_URL)('Pizzaria (e2e)', () => {
@@ -63,7 +63,7 @@ describe.skipIf(!process.env.DATABASE_URL)('Pizzaria (e2e)', () => {
     });
 
   beforeAll(async () => {
-    app = await createApp({ logger: false });
+    app = await createTestApp();
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
     borda = (

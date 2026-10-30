@@ -17,6 +17,12 @@ import { cashMovements, cashSessions, payments } from '../db/schema.js';
 
 type SessionRow = typeof cashSessions.$inferSelect;
 
+/** Caixa com os totais sempre calculados (a API esconde para quem não é dono). */
+export type FullCashSession = CashSession & {
+  received: MethodTotals;
+  expected: MethodTotals;
+};
+
 const zero = (): MethodTotals => ({ cash: 0, credit: 0, debit: 0, pix: 0 });
 const iso = (d: Date | null) => (d ? d.toISOString() : null);
 
@@ -24,7 +30,7 @@ const iso = (d: Date | null) => (d ? d.toISOString() : null);
 export async function loadSessions(
   db: Executor,
   rows: SessionRow[],
-): Promise<CashSession[]> {
+): Promise<FullCashSession[]> {
   if (rows.length === 0) return [];
   const ids = rows.map((r) => r.id);
   const [paid, moves] = await Promise.all([
@@ -147,7 +153,7 @@ export async function lockOpenSession(tx: Transaction): Promise<SessionRow> {
 export class CashService {
   constructor(@Inject(DB) private readonly db: Database) {}
 
-  async current(): Promise<CashSession | null> {
+  async current(): Promise<FullCashSession | null> {
     const rows = await this.db
       .select()
       .from(cashSessions)
@@ -156,7 +162,7 @@ export class CashService {
     return session ?? null;
   }
 
-  async list(limit: number): Promise<CashSession[]> {
+  async list(limit: number): Promise<FullCashSession[]> {
     const rows = await this.db
       .select()
       .from(cashSessions)
@@ -165,7 +171,7 @@ export class CashService {
     return loadSessions(this.db, rows);
   }
 
-  async get(db: Executor, id: string): Promise<CashSession> {
+  async get(db: Executor, id: string): Promise<FullCashSession> {
     const rows = await db
       .select()
       .from(cashSessions)
@@ -175,10 +181,12 @@ export class CashService {
     return session;
   }
 
+  /** `operator`: nome do usuário logado (nunca vem do corpo da requisição). */
   async open(
     tx: Transaction,
     input: z.output<typeof openCashSchema>,
-  ): Promise<CashSession> {
+    operator: string,
+  ): Promise<FullCashSession> {
     const [existing] = await tx
       .select({ number: cashSessions.number })
       .from(cashSessions)
@@ -194,7 +202,7 @@ export class CashService {
     const [row] = await tx
       .insert(cashSessions)
       .values({
-        openedBy: input.operator,
+        openedBy: operator,
         openingFloatCents: input.openingFloatCents,
       })
       .returning({ id: cashSessions.id });
@@ -206,7 +214,8 @@ export class CashService {
     tx: Transaction,
     id: string,
     input: z.output<typeof addCashMovementSchema>,
-  ): Promise<CashSession> {
+    operator: string,
+  ): Promise<FullCashSession> {
     const row = await this.lockForUpdate(tx, id);
     if (input.kind === 'withdrawal') {
       const [session] = await loadSessions(tx, [row]);
@@ -219,7 +228,9 @@ export class CashService {
         );
       }
     }
-    await tx.insert(cashMovements).values({ sessionId: row.id, ...input });
+    await tx
+      .insert(cashMovements)
+      .values({ sessionId: row.id, ...input, operator });
     await this.touch(tx, row.id);
     return this.get(tx, row.id);
   }
@@ -232,7 +243,8 @@ export class CashService {
     tx: Transaction,
     id: string,
     input: z.output<typeof closeCashSchema>,
-  ): Promise<CashSession> {
+    operator: string,
+  ): Promise<FullCashSession> {
     const row = await this.lockForUpdate(tx, id);
     if (row.version !== input.version) {
       throw AppException.versionConflict('Caixa', row.version);
@@ -242,7 +254,7 @@ export class CashService {
       .update(cashSessions)
       .set({
         status: 'closed',
-        closedBy: input.operator,
+        closedBy: operator,
         closedAt: new Date(),
         notes: input.notes,
         expectedCashCents: session.expected.cash,

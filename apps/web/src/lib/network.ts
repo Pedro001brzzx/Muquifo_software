@@ -2,12 +2,16 @@ import type { Network } from '@muquifo/contracts';
 import { useQuery } from '@tanstack/react-query';
 import { api, queryKeys } from '@/api';
 
-/** Rede do servidor; revisada a cada minuto para o alarme de IP mudado. */
-export function useNetwork() {
+/**
+ * Rede do servidor; revisada a cada minuto para o alarme de IP mudado. Só
+ * dono/gerente consulta (é ele quem resolve).
+ */
+export function useNetwork({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: queryKeys.network,
     queryFn: api.network,
     refetchInterval: 60_000,
+    enabled,
   });
 }
 

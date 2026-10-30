@@ -48,4 +48,8 @@ export const errorCodes = {
   cashClosed: 'CASH_CLOSED',
   cashAlreadyOpen: 'CASH_ALREADY_OPEN',
   cashInsufficient: 'CASH_INSUFFICIENT',
+  invalidPin: 'INVALID_PIN',
+  pinLocked: 'PIN_LOCKED',
+  approvalRequired: 'APPROVAL_REQUIRED',
+  lastOwner: 'LAST_OWNER',
 } as const;

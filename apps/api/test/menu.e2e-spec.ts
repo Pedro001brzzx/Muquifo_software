@@ -7,7 +7,7 @@ import type {
   Restaurant,
 } from '@muquifo/contracts';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { createApp } from '../src/app.factory.js';
+import { createTestApp } from './auth-helper.js';
 
 /** Cardápio público do QR code: só itens ativos, sem campos internos. */
 describe.skipIf(!process.env.DATABASE_URL)('Cardápio público (e2e)', () => {
@@ -20,7 +20,7 @@ describe.skipIf(!process.env.DATABASE_URL)('Cardápio público (e2e)', () => {
   ) => app.inject({ method, url: `/api/v1${url}`, payload });
 
   beforeAll(async () => {
-    app = await createApp({ logger: false });
+    app = await createTestApp();
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
   });

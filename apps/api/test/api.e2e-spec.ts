@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { ApiError, Category, Health, Product } from '@muquifo/contracts';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { createApp } from '../src/app.factory.js';
+import { createTestApp } from './auth-helper.js';
 
 /**
  * Requer um PostgreSQL com as migrations aplicadas (pnpm db:migrate).
@@ -11,7 +11,7 @@ describe.skipIf(!process.env.DATABASE_URL)('API (e2e)', () => {
   let app: NestFastifyApplication;
 
   beforeAll(async () => {
-    app = await createApp({ logger: false });
+    app = await createTestApp();
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
   });

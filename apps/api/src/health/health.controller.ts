@@ -3,6 +3,7 @@ import { type Health, healthSchema } from '@muquifo/contracts';
 import { Controller, Get, Inject } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { sql } from 'drizzle-orm';
+import { Public } from '../auth/decorators.js';
 import type { Database } from '../db/client.js';
 import { DB } from '../db/database.module.js';
 import { ApiZodResponse } from '../openapi/api-docs.js';
@@ -19,6 +20,7 @@ const version =
   ).version;
 
 @ApiTags('Sistema')
+@Public()
 @Controller('health')
 export class HealthController {
   constructor(@Inject(DB) private readonly db: Database) {}

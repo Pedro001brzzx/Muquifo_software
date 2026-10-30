@@ -2,6 +2,7 @@ import { restaurantSchema, updateRestaurantSchema } from '@muquifo/contracts';
 import { Body, Controller, Get, Patch } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { z } from 'zod';
+import { MinRole } from '../auth/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { ApiErrors, ApiZodBody, ApiZodResponse } from '../openapi/api-docs.js';
 import { RestaurantService } from './restaurant.service.js';
@@ -25,6 +26,7 @@ export class RestaurantController {
     return this.restaurant.get();
   }
 
+  @MinRole('owner')
   @Patch()
   @ApiOperation({
     summary: 'Altera nome, frase e aviso',

@@ -1,10 +1,13 @@
 import { publicMenuSchema } from '@muquifo/contracts';
 import { Controller, Get } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Public } from '../auth/decorators.js';
 import { ApiZodResponse } from '../openapi/api-docs.js';
 import { MenuService } from './menu.service.js';
 
 @ApiTags('Cardápio público')
+// O cliente abre pelo QR code, sem login.
+@Public()
 @Controller()
 export class MenuController {
   constructor(private readonly menu: MenuService) {}

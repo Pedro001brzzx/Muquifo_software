@@ -8,7 +8,7 @@ import type {
   TabDetail,
 } from '@muquifo/contracts';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { createApp } from '../src/app.factory.js';
+import { createTestApp } from './auth-helper.js';
 
 /** Grupos de complementos: cadastro, herança por categoria e uso no pedido. */
 describe.skipIf(!process.env.DATABASE_URL)('Complementos (e2e)', () => {
@@ -42,7 +42,7 @@ describe.skipIf(!process.env.DATABASE_URL)('Complementos (e2e)', () => {
     });
 
   beforeAll(async () => {
-    app = await createApp({ logger: false });
+    app = await createTestApp();
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
 

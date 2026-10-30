@@ -16,6 +16,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { z } from 'zod';
+import { MinRole } from '../auth/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import {
   ApiErrors,
@@ -55,6 +56,7 @@ export class IngredientsController {
     return this.ingredients.list(query);
   }
 
+  @MinRole('owner')
   @Post()
   @ApiOperation({ summary: 'Cria ingrediente' })
   @ApiZodBody(createIngredientSchema)
@@ -67,6 +69,7 @@ export class IngredientsController {
     return this.ingredients.create(body);
   }
 
+  @MinRole('owner')
   @Patch(':id')
   @ApiOperation({
     summary: 'Renomeia ou arquiva ingrediente',

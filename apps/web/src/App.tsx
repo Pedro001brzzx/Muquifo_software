@@ -1,9 +1,13 @@
-import { lazy, Suspense } from 'react';
-import { BrowserRouter, Route, Routes } from 'react-router';
+import { type UserRole, userRoleLabel } from '@muquifo/contracts';
+import { Lock } from 'lucide-react';
+import { lazy, type ReactNode, Suspense } from 'react';
+import { BrowserRouter, Outlet, Route, Routes } from 'react-router';
 import { Toaster } from 'sonner';
+import { ApprovalDialog } from '@/components/approval-dialog';
 import { AppLayout } from '@/components/layout';
 import { useTheme } from '@/components/theme';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { AuthProvider, useAuth, useCan } from '@/lib/auth';
 
 /**
  * Cada tela vira um arquivo separado: o celular do cliente baixa só o
@@ -38,41 +42,102 @@ const QrCodesPage = page(() => import('@/pages/qr-codes'), 'QrCodesPage');
 const RegistryPage = page(() => import('@/pages/registry'), 'RegistryPage');
 const TabDetailPage = page(() => import('@/pages/tab-detail'), 'TabDetailPage');
 const TabsPage = page(() => import('@/pages/tabs'), 'TabsPage');
+const LoginScreen = page(() => import('@/pages/login'), 'LoginScreen');
+
+/** Tela só para quem tem a função mínima; os outros veem um aviso. */
+function Only({ min, children }: { min: UserRole; children: ReactNode }) {
+  const allowed = useCan(min);
+  if (allowed) return children;
+  return (
+    <div className="flex flex-col items-center gap-3 px-4 py-20 text-center">
+      <Lock className="size-10 text-muted-foreground" />
+      <p className="text-lg font-semibold">
+        Esta tela é para {userRoleLabel[min].toLowerCase()}.
+      </p>
+      <p className="text-muted-foreground">
+        Peça para quem tem acesso, ou troque de usuário no menu.
+      </p>
+    </div>
+  );
+}
+
+/** Sem sessão neste aparelho: tela de entrada com PIN. */
+function RequireLogin() {
+  const { user, checking } = useAuth();
+  if (checking) return null;
+  if (!user) return <LoginScreen />;
+  return <Outlet />;
+}
 
 export function App() {
   const { theme } = useTheme();
   return (
     <TooltipProvider delayDuration={300}>
-      <BrowserRouter>
-        <Suspense fallback={null}>
-          <Routes>
-            {/* Fora do layout: cardápio do cliente e folha de QR para imprimir. */}
-            <Route path="cardapio" element={<PublicMenuPage />} />
-            <Route path="qrcode" element={<QrCodesPage />} />
-            <Route element={<AppLayout />}>
-              <Route index element={<FloorPage />} />
-              <Route path="comandas" element={<TabsPage />} />
-              <Route path="caixa" element={<CashPage />} />
-              <Route path="painel" element={<DashboardPage />} />
-              <Route path="comandas/:id" element={<TabDetailPage />} />
-              <Route path="comandas/:id/fechar" element={<CloseTabPage />} />
-              <Route path="produtos" element={<ProductsPage />} />
-              <Route path="produtos/novo" element={<AddItemPage />} />
-              <Route path="comecar" element={<OnboardingPage />} />
-              <Route path="produtos/montar" element={<BurgerBuilderPage />} />
-              <Route path="produtos/pizzaria" element={<PizzeriaPage />} />
-              <Route
-                path="produtos/:id/montar"
-                element={<BurgerBuilderPage />}
-              />
-              <Route path="cadastros" element={<RegistryPage />} />
-              <Route path="conectar" element={<ConnectPage />} />
-              <Route path="*" element={<FloorPage />} />
-            </Route>
-          </Routes>
-        </Suspense>
-      </BrowserRouter>
+      <AuthProvider>
+        <BrowserRouter>
+          <Suspense fallback={null}>
+            <Routes>
+              {/* Cardápio do cliente (QR code): sem login. */}
+              <Route path="cardapio" element={<PublicMenuPage />} />
+              <Route element={<RequireLogin />}>
+                {/* Fora do layout: folha de QR para imprimir. */}
+                <Route
+                  path="qrcode"
+                  element={
+                    <Only min="owner">
+                      <QrCodesPage />
+                    </Only>
+                  }
+                />
+                <Route element={<AppLayout />}>
+                  <Route index element={<FloorPage />} />
+                  <Route path="comandas" element={<TabsPage />} />
+                  <Route path="comandas/:id" element={<TabDetailPage />} />
+                  <Route
+                    path="comandas/:id/fechar"
+                    element={
+                      <Only min="cashier">
+                        <CloseTabPage />
+                      </Only>
+                    }
+                  />
+                  <Route
+                    path="caixa"
+                    element={
+                      <Only min="cashier">
+                        <CashPage />
+                      </Only>
+                    }
+                  />
+                  {ownerRoutes.map(([path, element]) => (
+                    <Route
+                      key={path}
+                      path={path}
+                      element={<Only min="owner">{element}</Only>}
+                    />
+                  ))}
+                  <Route path="*" element={<FloorPage />} />
+                </Route>
+              </Route>
+            </Routes>
+          </Suspense>
+        </BrowserRouter>
+        <ApprovalDialog />
+      </AuthProvider>
       <Toaster theme={theme} richColors closeButton position="top-center" />
     </TooltipProvider>
   );
 }
+
+/** Administração: painel, cardápio, cadastros e celulares. */
+const ownerRoutes: [string, ReactNode][] = [
+  ['painel', <DashboardPage key="painel" />],
+  ['produtos', <ProductsPage key="produtos" />],
+  ['produtos/novo', <AddItemPage key="novo" />],
+  ['comecar', <OnboardingPage key="comecar" />],
+  ['produtos/montar', <BurgerBuilderPage key="montar" />],
+  ['produtos/pizzaria', <PizzeriaPage key="pizzaria" />],
+  ['produtos/:id/montar', <BurgerBuilderPage key="montar-id" />],
+  ['cadastros', <RegistryPage key="cadastros" />],
+  ['conectar', <ConnectPage key="conectar" />],
+];

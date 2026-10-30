@@ -2,11 +2,13 @@ import { networkSchema, publishAddressSchema } from '@muquifo/contracts';
 import { Body, Controller, Delete, Get, HttpCode, Put } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { z } from 'zod';
+import { MinRole } from '../auth/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { ApiErrors, ApiZodBody, ApiZodResponse } from '../openapi/api-docs.js';
 import { NetworkService } from './network.service.js';
 
 @ApiTags('Rede local')
+@MinRole('owner')
 @Controller('network')
 export class NetworkController {
   constructor(private readonly network: NetworkService) {}

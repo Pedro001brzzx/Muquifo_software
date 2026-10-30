@@ -2,7 +2,9 @@ import {
   type AddCashMovementInput,
   type AddOrderItemInput,
   type AddPaymentInput,
+  APPROVAL_HEADER,
   type ApiError,
+  type AuthStatus,
   type CancelOrderInput,
   type CancelPaymentInput,
   type CancelTabInput,
@@ -17,12 +19,16 @@ import {
   type CreatePizzaFlavorInput,
   type CreatePizzaTierInput,
   type CreateProductInput,
+  type CreateUserInput,
   type CurrentCash,
+  type CurrentUser,
   type Dashboard,
   type DiningTable,
+  errorCodes,
   type Health,
   IDEMPOTENCY_HEADER,
   type Ingredient,
+  type LoginInput,
   type Network,
   type OpenCashInput,
   type OpenTabInput,
@@ -35,7 +41,11 @@ import {
   type ProductStatusFilter,
   type PublicMenu,
   type PublishAddressInput,
+  type RecoverInput,
   type Restaurant,
+  type Session,
+  type SetupInput,
+  type SetupResult,
   type TabDetail,
   type TabStatus,
   type TabSummary,
@@ -47,6 +57,8 @@ import {
   type UpdateProductAvailabilityInput,
   type UpdateProductInput,
   type UpdateRestaurantInput,
+  type UpdateUserInput,
+  type User,
 } from '@muquifo/contracts';
 import { newIdempotencyKey } from './lib/idempotency';
 
@@ -80,6 +92,56 @@ export class ApiRequestError extends Error {
 
 const NETWORK_RETRIES = 2;
 
+// ---------- Sessão (PIN) ----------
+
+const TOKEN_KEY = 'muquifo.session';
+
+function readToken(): string | null {
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+let authToken = readToken();
+const tokenListeners = new Set<(token: string | null) => void>();
+
+export const getAuthToken = () => authToken;
+
+/** Guarda (ou apaga) a sessão deste aparelho e avisa quem estiver ouvindo. */
+export function setAuthToken(token: string | null) {
+  authToken = token;
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    // Sem armazenamento: a sessão vale até fechar a aba.
+  }
+  for (const listen of tokenListeners) listen(token);
+}
+
+export function onAuthTokenChange(listen: (token: string | null) => void) {
+  tokenListeners.add(listen);
+  return () => {
+    tokenListeners.delete(listen);
+  };
+}
+
+/**
+ * Pede o PIN de um dono/gerente na tela (ações sensíveis feitas por quem não
+ * é dono). Devolve o PIN digitado, ou nulo se a pessoa desistiu.
+ */
+export type ApprovalPrompt = (request: {
+  action: string;
+  error?: string;
+}) => Promise<string | null>;
+
+let approvalPrompt: ApprovalPrompt | null = null;
+export function setApprovalPrompt(prompt: ApprovalPrompt | null) {
+  approvalPrompt = prompt;
+}
+
 async function request<T>(
   method: string,
   path: string,
@@ -88,10 +150,12 @@ async function request<T>(
 ): Promise<T> {
   const headers: Record<string, string> = {};
   if (body !== undefined) headers['content-type'] = 'application/json';
+  if (authToken) headers.authorization = `Bearer ${authToken}`;
   // Uma chave por ação do usuário; os reenvios por falha de rede usam a mesma,
   // então a API nunca executa a operação duas vezes (RNF03).
   if (options.idempotent) headers[IDEMPOTENCY_HEADER] = newIdempotencyKey();
   const attempts = options.idempotent ? NETWORK_RETRIES + 1 : 1;
+  let action = '';
 
   for (let attempt = 1; ; attempt++) {
     let res: Response;
@@ -109,8 +173,34 @@ async function request<T>(
       throw new ApiRequestError(0, null);
     }
     const data: unknown = await res.json().catch(() => null);
-    if (!res.ok) throw new ApiRequestError(res.status, data as ApiError | null);
-    return data as T;
+    if (res.ok) return data as T;
+
+    const error = new ApiRequestError(res.status, data as ApiError | null);
+    // Sessão expirou ou foi encerrada (PIN trocado, desativado): volta à entrada.
+    if (res.status === 401 && error.code === errorCodes.unauthorized) {
+      if (authToken) setAuthToken(null);
+      throw error;
+    }
+    // Ação sensível: pede o PIN do gerente e repete com a mesma chave.
+    const needsApproval =
+      res.status === 403 &&
+      (error.code === errorCodes.approvalRequired ||
+        (error.code === errorCodes.invalidPin && APPROVAL_HEADER in headers));
+    if (needsApproval && approvalPrompt) {
+      if (error.code === errorCodes.approvalRequired) {
+        action = (error.body?.details as { action?: string })?.action ?? '';
+      }
+      const pin = await approvalPrompt({
+        action,
+        error: error.code === errorCodes.invalidPin ? error.message : undefined,
+      });
+      if (pin) {
+        headers[APPROVAL_HEADER] = pin;
+        attempt = 0;
+        continue;
+      }
+    }
+    throw error;
   }
 }
 
@@ -125,6 +215,20 @@ const idem = { idempotent: true };
 
 export const api = {
   health: () => request<Health>('GET', '/health'),
+
+  authStatus: () => request<AuthStatus>('GET', '/auth/status'),
+  setup: (input: SetupInput) =>
+    request<SetupResult>('POST', '/auth/setup', input),
+  login: (input: LoginInput) => request<Session>('POST', '/auth/login', input),
+  recover: (input: RecoverInput) =>
+    request<Session>('POST', '/auth/recover', input),
+  me: () => request<CurrentUser>('GET', '/auth/me'),
+  logout: () => request<null>('POST', '/auth/logout'),
+  users: () => request<User[]>('GET', '/users'),
+  createUser: (input: CreateUserInput) =>
+    request<User>('POST', '/users', input),
+  updateUser: (id: string, input: UpdateUserInput) =>
+    request<User>('PATCH', `/users/${id}`, input),
 
   sectors: () => request<ProductionSector[]>('GET', '/sectors'),
   categories: () => request<Category[]>('GET', '/categories'),
@@ -243,6 +347,9 @@ export const api = {
 
 export const queryKeys = {
   health: ['health'],
+  authStatus: ['auth-status'],
+  me: ['auth-me'],
+  users: ['users'],
   sectors: ['sectors'],
   categories: ['categories'],
   products: ['products'],

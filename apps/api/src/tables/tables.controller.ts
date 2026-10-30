@@ -2,6 +2,7 @@ import { createDiningTableSchema, diningTableSchema } from '@muquifo/contracts';
 import { Body, Controller, Get, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { z } from 'zod';
+import { MinRole } from '../auth/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { ApiErrors, ApiZodBody, ApiZodResponse } from '../openapi/api-docs.js';
 import { TablesService } from './tables.service.js';
@@ -27,6 +28,7 @@ export class TablesController {
     return this.tables.list();
   }
 
+  @MinRole('owner')
   @Post()
   @ApiOperation({ summary: 'Cadastra mesa' })
   @ApiZodBody(createDiningTableSchema)

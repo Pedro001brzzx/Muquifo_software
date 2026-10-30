@@ -46,6 +46,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useCan } from '@/lib/auth';
 import { toastError } from '@/lib/errors';
 import {
   clock,
@@ -58,6 +59,7 @@ import { cn } from '@/lib/utils';
 
 export function TabDetailPage() {
   const { id = '' } = useParams();
+  const canSettle = useCan('cashier');
   const navigate = useNavigate();
   const qc = useQueryClient();
   const tab = useQuery({
@@ -214,12 +216,14 @@ export function TabDetailPage() {
               <AlertDescription>
                 Encerrada às {t.closedAt && clock(t.closedAt)} ·{' '}
                 {formatCents(t.paidCents)} recebidos.{' '}
-                <Link
-                  to={`/comandas/${t.id}/fechar`}
-                  className="underline underline-offset-2"
-                >
-                  Ver pagamentos
-                </Link>
+                {canSettle && (
+                  <Link
+                    to={`/comandas/${t.id}/fechar`}
+                    className="underline underline-offset-2"
+                  >
+                    Ver pagamentos
+                  </Link>
+                )}
               </AlertDescription>
             </Alert>
           )}
@@ -402,6 +406,7 @@ function SettleActions({
   compact?: boolean;
   onRelease: () => void;
 }) {
+  const canSettle = useCan('cashier');
   if (tab.status !== 'open' && tab.status !== 'closing') return null;
   if (tab.totalCents === 0 && tab.paidCents === 0) {
     return (
@@ -410,6 +415,8 @@ function SettleActions({
       </Button>
     );
   }
+  // Garçom não recebe: a conta é fechada no caixa.
+  if (!canSettle) return null;
   return (
     <Button variant="outline" size={size} asChild>
       <Link to={`/comandas/${tab.id}/fechar`}>

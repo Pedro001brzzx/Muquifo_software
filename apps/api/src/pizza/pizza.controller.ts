@@ -20,6 +20,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { z } from 'zod';
+import { MinRole } from '../auth/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import {
   ApiErrors,
@@ -65,6 +66,7 @@ export class PizzaController {
     return this.pizza.listTiers(query);
   }
 
+  @MinRole('owner')
   @Post('tiers')
   @ApiOperation({ summary: 'Cria faixa de preço' })
   @ApiZodBody(createPizzaTierSchema)
@@ -80,6 +82,7 @@ export class PizzaController {
     return this.pizza.createTier(body);
   }
 
+  @MinRole('owner')
   @Patch('tiers/:id')
   @ApiOperation({
     summary: 'Edita faixa e a tabela de preços',
@@ -116,6 +119,7 @@ export class PizzaController {
     return this.pizza.listFlavors(query);
   }
 
+  @MinRole('owner')
   @Post('flavors')
   @ApiOperation({ summary: 'Cria sabor' })
   @ApiZodBody(createPizzaFlavorSchema)
@@ -131,6 +135,7 @@ export class PizzaController {
     return this.pizza.createFlavor(body);
   }
 
+  @MinRole('owner')
   @Patch('flavors/:id')
   @ApiOperation({
     summary: 'Edita, marca em falta ou arquiva sabor',

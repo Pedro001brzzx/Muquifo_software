@@ -39,6 +39,13 @@ describe.skipIf(!process.env.DATABASE_URL)('Swagger (e2e)', () => {
 
   it('documenta todas as rotas com o prefixo /api/v1', () => {
     expect(Object.keys(doc.paths).sort()).toEqual([
+      '/api/v1/audit/verify',
+      '/api/v1/auth/login',
+      '/api/v1/auth/logout',
+      '/api/v1/auth/me',
+      '/api/v1/auth/recover',
+      '/api/v1/auth/setup',
+      '/api/v1/auth/status',
       '/api/v1/cash/current',
       '/api/v1/cash/sessions',
       '/api/v1/cash/sessions/{id}/close',
@@ -78,6 +85,8 @@ describe.skipIf(!process.env.DATABASE_URL)('Swagger (e2e)', () => {
       '/api/v1/tabs/{id}/close',
       '/api/v1/tabs/{id}/payments',
       '/api/v1/tabs/{id}/payments/{paymentId}/cancellations',
+      '/api/v1/users',
+      '/api/v1/users/{id}',
     ]);
   });
 

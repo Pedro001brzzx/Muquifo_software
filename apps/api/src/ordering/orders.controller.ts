@@ -1,5 +1,6 @@
 import {
   addOrderItemSchema,
+  type CurrentUser,
   cancelOrderSchema,
   createOrderSchema,
   IDEMPOTENCY_HEADER,
@@ -22,6 +23,8 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
 import type { z } from 'zod';
+import { AuditService } from '../auth/audit.service.js';
+import { Approver, AuthUser, RequiresApproval } from '../auth/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import {
   ApiErrors,
@@ -62,6 +65,7 @@ export class OrdersController {
   constructor(
     private readonly orders: OrdersService,
     private readonly idempotency: IdempotencyService,
+    private readonly audit: AuditService,
   ) {}
 
   @Get(':id')
@@ -213,6 +217,8 @@ export class OrdersController {
   }
 
   @Post(':id/cancellations')
+  // Item já enviado para a cozinha: cancelar sem o gerente é a fraude clássica.
+  @RequiresApproval('cancelar item já enviado')
   @ApiOperation({
     summary: 'Cancela pedido ou itens',
     description:
@@ -233,6 +239,8 @@ export class OrdersController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body(new ZodValidationPipe(cancelOrderSchema))
     body: z.output<typeof cancelOrderSchema>,
+    @AuthUser() user: CurrentUser,
+    @Approver() approver: CurrentUser,
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
     const result = await this.idempotency.execute(
@@ -242,7 +250,20 @@ export class OrdersController {
         payload: { id, body },
         statusCode: HttpStatus.CREATED,
       },
-      (tx) => this.orders.cancel(tx, id, body),
+      async (tx) => {
+        const result = await this.orders.cancel(tx, id, body);
+        await this.audit.record(
+          {
+            action: 'order_canceled',
+            actorId: user.id,
+            approverId: approver.id,
+            target: id,
+            details: { reason: body.reason, itemIds: body.itemIds ?? 'todos' },
+          },
+          tx,
+        );
+        return result;
+      },
     );
     return sendIdempotent(reply, result);
   }

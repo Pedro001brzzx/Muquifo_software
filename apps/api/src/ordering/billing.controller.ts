@@ -1,5 +1,6 @@
 import {
   addPaymentSchema,
+  type CurrentUser,
   cancelPaymentSchema,
   cancelTabSchema,
   closeTabSchema,
@@ -20,6 +21,13 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
 import type { z } from 'zod';
+import { AuditService } from '../auth/audit.service.js';
+import {
+  Approver,
+  AuthUser,
+  MinRole,
+  RequiresApproval,
+} from '../auth/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import {
   ApiIdempotent,
@@ -45,9 +53,11 @@ export class BillingController {
   constructor(
     private readonly billing: BillingService,
     private readonly idempotency: IdempotencyService,
+    private readonly audit: AuditService,
   ) {}
 
   @Post('payments')
+  @MinRole('cashier')
   @ApiOperation({
     summary: 'Registra pagamento',
     description:
@@ -83,6 +93,8 @@ export class BillingController {
   }
 
   @Post('payments/:paymentId/cancellations')
+  @MinRole('cashier')
+  @RequiresApproval('estornar um pagamento')
   @ApiOperation({
     summary: 'Estorna pagamento',
     description:
@@ -102,6 +114,8 @@ export class BillingController {
     @Param('paymentId', ParseUUIDPipe) paymentId: string,
     @Body(new ZodValidationPipe(cancelPaymentSchema))
     body: z.output<typeof cancelPaymentSchema>,
+    @AuthUser() user: CurrentUser,
+    @Approver() approver: CurrentUser,
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
     const result = await this.idempotency.execute(
@@ -111,12 +125,31 @@ export class BillingController {
         payload: { id, paymentId, body },
         statusCode: HttpStatus.CREATED,
       },
-      (tx) => this.billing.cancelPayment(tx, id, paymentId, body),
+      async (tx) => {
+        const result = await this.billing.cancelPayment(
+          tx,
+          id,
+          paymentId,
+          body,
+        );
+        await this.audit.record(
+          {
+            action: 'payment_refunded',
+            actorId: user.id,
+            approverId: approver.id,
+            target: paymentId,
+            details: { tabId: id, reason: body.reason },
+          },
+          tx,
+        );
+        return result;
+      },
     );
     return sendIdempotent(reply, result);
   }
 
   @Post('close')
+  @MinRole('cashier')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Fecha a conta',
@@ -174,6 +207,7 @@ export class BillingController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body(new ZodValidationPipe(cancelTabSchema))
     body: z.output<typeof cancelTabSchema>,
+    @AuthUser() user: CurrentUser,
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
     const result = await this.idempotency.execute(
@@ -183,7 +217,19 @@ export class BillingController {
         payload: { id, body },
         statusCode: HttpStatus.CREATED,
       },
-      (tx) => this.billing.cancelTab(tx, id, body),
+      async (tx) => {
+        const result = await this.billing.cancelTab(tx, id, body);
+        await this.audit.record(
+          {
+            action: 'tab_released',
+            actorId: user.id,
+            target: id,
+            details: { reason: body.reason },
+          },
+          tx,
+        );
+        return result;
+      },
     );
     return sendIdempotent(reply, result);
   }

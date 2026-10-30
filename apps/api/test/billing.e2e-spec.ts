@@ -8,7 +8,7 @@ import type {
   TabDetail,
 } from '@muquifo/contracts';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { createApp } from '../src/app.factory.js';
+import { createTestApp } from './auth-helper.js';
 import { ensureCashOpen } from './cash-helper.js';
 
 /** Fechamento de conta, pagamentos e liberação de mesa (RF07, RN04, RN05). */
@@ -57,7 +57,7 @@ describe.skipIf(!process.env.DATABASE_URL)('Fechamento de conta (e2e)', () => {
     call('POST', `/tabs/${tab.id}/close`, { version: tab.version });
 
   beforeAll(async () => {
-    app = await createApp({ logger: false });
+    app = await createTestApp();
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
     await ensureCashOpen(app);

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AuthModule } from './auth/auth.module.js';
 import { CashModule } from './cash/cash.module.js';
 import { CatalogModule } from './catalog/catalog.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
@@ -18,6 +19,7 @@ import { TablesModule } from './tables/tables.module.js';
   imports: [
     DatabaseModule,
     OperationsModule,
+    AuthModule,
     CatalogModule,
     OptionsModule,
     IngredientsModule,

@@ -71,6 +71,10 @@ const uniqueConstraints: Record<string, { message: string; field: string }> = {
     message: 'Já existe um sabor com esse nome.',
     field: 'name',
   },
+  users_name_uq: {
+    message: 'Já existe alguém da equipe com esse nome.',
+    field: 'name',
+  },
   dining_tables_number_uq: {
     message: 'Já existe uma mesa com esse número.',
     field: 'number',

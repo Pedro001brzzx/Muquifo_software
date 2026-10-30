@@ -92,6 +92,13 @@
       "when": 1793313218590,
       "tag": "0012_address_follow",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793317611176,
+      "tag": "0013_auth_pin",
+      "breakpoints": true
     }
   ]
 }

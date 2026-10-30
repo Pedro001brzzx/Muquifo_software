@@ -10,7 +10,7 @@ import type {
   TabDetail,
 } from '@muquifo/contracts';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { createApp } from '../src/app.factory.js';
+import { createTestApp, testUserOf } from './auth-helper.js';
 
 /** Caixa: abertura, sangria/suprimento, fechamento cego e painel do dia. */
 describe.skipIf(!process.env.DATABASE_URL)('Caixa e painel (e2e)', () => {
@@ -30,7 +30,6 @@ describe.skipIf(!process.env.DATABASE_URL)('Caixa e painel (e2e)', () => {
   const closeExact = (s: CashSession) =>
     call('POST', `/cash/sessions/${s.id}/close`, {
       version: s.version,
-      operator: 'Testes',
       counted: s.expected,
     });
 
@@ -49,7 +48,7 @@ describe.skipIf(!process.env.DATABASE_URL)('Caixa e painel (e2e)', () => {
   }
 
   beforeAll(async () => {
-    app = await createApp({ logger: false });
+    app = await createTestApp();
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
     const tag = randomUUID().slice(0, 8);
@@ -82,12 +81,13 @@ describe.skipIf(!process.env.DATABASE_URL)('Caixa e painel (e2e)', () => {
     expect(res.json<ApiError>().code).toBe('CASH_CLOSED');
 
     const opened = await call('POST', '/cash/sessions', {
-      operator: 'Ana',
+      // Nome digitado é ignorado: quem abre é o usuário logado.
+      operator: 'Outra pessoa',
       openingFloatCents: 10000,
     });
     expect(opened.statusCode).toBe(201);
+    expect(opened.json<CashSession>().openedBy).toBe(testUserOf(app).name);
     const again = await call('POST', '/cash/sessions', {
-      operator: 'Bia',
       openingFloatCents: 0,
     });
     expect(again.json<ApiError>().code).toBe('CASH_ALREADY_OPEN');
@@ -127,7 +127,6 @@ describe.skipIf(!process.env.DATABASE_URL)('Caixa e painel (e2e)', () => {
         kind: 'withdrawal',
         amountCents: 3000,
         reason: 'Depósito no banco',
-        operator: 'Ana',
       })
     ).json<CashSession>();
 
@@ -147,11 +146,12 @@ describe.skipIf(!process.env.DATABASE_URL)('Caixa e painel (e2e)', () => {
     const closed = (
       await call('POST', `/cash/sessions/${session.id}/close`, {
         version: session.version,
-        operator: 'Ana',
         counted: { cash: 12500, credit: 0, debit: 0, pix: 4000 },
       })
     ).json<CashSession>();
     expect(closed.status).toBe('closed');
+    expect(closed.closedBy).toBe(testUserOf(app).name);
+    expect(closed.movements.at(-1)?.operator).toBe(testUserOf(app).name);
     expect(closed.difference).toEqual({
       cash: -500,
       credit: 0,
@@ -177,7 +177,7 @@ describe.skipIf(!process.env.DATABASE_URL)('Caixa e painel (e2e)', () => {
       CashSession[]
     >();
     const same = history.find((s) => s.id === session.id)!;
-    expect(same.expected.pix).toBe(4000);
+    expect(same.expected?.pix).toBe(4000);
     expect(same.difference?.cash).toBe(-500);
 
     // Painel do dia: diferença de caixa e estorno aparecem como atenção.

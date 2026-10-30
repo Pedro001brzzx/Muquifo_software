@@ -16,6 +16,7 @@ import {
   Loader2,
   Lock,
   LockOpen,
+  UserRound,
   Wallet,
 } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
@@ -38,27 +39,12 @@ import {
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
+import { useAuth } from '@/lib/auth';
 import { toastError } from '@/lib/errors';
 import { formatCents } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 const methods: PaymentMethod[] = ['cash', 'credit', 'debit', 'pix'];
-const OPERATOR_KEY = 'muquifo.cash-operator';
-
-function lastOperator() {
-  try {
-    return localStorage.getItem(OPERATOR_KEY) ?? '';
-  } catch {
-    return '';
-  }
-}
-function rememberOperator(name: string) {
-  try {
-    localStorage.setItem(OPERATOR_KEY, name);
-  } catch {
-    // Sem armazenamento: só não lembra o nome.
-  }
-}
 
 const time = (iso: string) =>
   new Date(iso).toLocaleString('pt-BR', {
@@ -126,19 +112,27 @@ export function CashPage() {
   );
 }
 
+/** Quem faz a operação é o usuário logado; o caixa registra o nome dele. */
+function ActingAs({ verb }: { verb: string }) {
+  const { user } = useAuth();
+  return (
+    <p className="flex items-center gap-2 rounded-lg bg-muted px-3 py-2 text-sm">
+      <UserRound className="size-4 text-muted-foreground" />
+      {verb} como <b>{user?.name}</b>
+    </p>
+  );
+}
+
 function OpenForm() {
   const qc = useQueryClient();
-  const [operator, setOperator] = useState(lastOperator);
   const [floatText, setFloatText] = useState('');
   const [error, setError] = useState('');
   const open = useMutation({
     mutationFn: () =>
       api.openCash({
-        operator: operator.trim(),
         openingFloatCents: parseCents(floatText) ?? 0,
       }),
     onSuccess: (s) => {
-      rememberOperator(s.openedBy);
       toast.success(`Caixa ${s.number} aberto`);
     },
     onError: toastError,
@@ -147,7 +141,6 @@ function OpenForm() {
 
   function submit(e: FormEvent) {
     e.preventDefault();
-    if (!operator.trim()) return setError('Quem está abrindo o caixa?');
     if (floatText && parseCents(floatText) === null)
       return setError('Valor do troco inválido.');
     open.mutate();
@@ -166,18 +159,7 @@ function OpenForm() {
       </CardHeader>
       <CardContent>
         <form onSubmit={submit} className="space-y-4">
-          <Field label="Quem está abrindo?" htmlFor="cash-operator">
-            <Input
-              id="cash-operator"
-              className="h-12 text-lg md:text-lg"
-              maxLength={60}
-              value={operator}
-              onChange={(e) => {
-                setOperator(e.target.value);
-                setError('');
-              }}
-            />
-          </Field>
+          <ActingAs verb="Abrindo" />
           <Field label="Troco na gaveta" htmlFor="cash-float">
             <MoneyInput
               id="cash-float"
@@ -352,7 +334,6 @@ function MovementDialog({
   const qc = useQueryClient();
   const [amountText, setAmountText] = useState('');
   const [reason, setReason] = useState('');
-  const [operator, setOperator] = useState(lastOperator);
   const [error, setError] = useState('');
   const save = useMutation({
     mutationFn: () =>
@@ -360,7 +341,6 @@ function MovementDialog({
         kind: kind!,
         amountCents: parseCents(amountText) ?? 0,
         reason: reason.trim(),
-        operator: operator.trim() || null,
       }),
     onSuccess: () => {
       toast.success(`${cashMovementKindLabel[kind!]} registrada`);
@@ -419,14 +399,7 @@ function MovementDialog({
               }}
             />
           </Field>
-          <Field label="Quem está fazendo" htmlFor="movement-operator">
-            <Input
-              id="movement-operator"
-              maxLength={60}
-              value={operator}
-              onChange={(e) => setOperator(e.target.value)}
-            />
-          </Field>
+          <ActingAs verb="Registrando" />
           {error && <p className="text-sm text-destructive">{error}</p>}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
@@ -462,7 +435,6 @@ function CloseDialog({
     debit: '',
     pix: '',
   });
-  const [operator, setOperator] = useState(lastOperator);
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
 
@@ -470,7 +442,6 @@ function CloseDialog({
     mutationFn: () =>
       api.closeCash(session.id, {
         version: session.version,
-        operator: operator.trim(),
         counted: {
           cash: parseCents(counted.cash) ?? 0,
           credit: parseCents(counted.credit) ?? 0,
@@ -479,10 +450,7 @@ function CloseDialog({
         },
         notes: notes.trim() || null,
       }),
-    onSuccess: (s) => {
-      rememberOperator(s.closedBy ?? '');
-      onClosed(s);
-    },
+    onSuccess: onClosed,
     onError: (e) => {
       toastError(e);
       void qc.invalidateQueries({ queryKey: queryKeys.cash });
@@ -502,7 +470,6 @@ function CloseDialog({
 
   function submit(e: FormEvent) {
     e.preventDefault();
-    if (!operator.trim()) return setError('Quem está fechando o caixa?');
     if (methods.some((m) => counted[m] && parseCents(counted[m]) === null))
       return setError('Algum valor está inválido.');
     close.mutate();
@@ -540,14 +507,7 @@ function CloseDialog({
               />
             </Field>
           ))}
-          <Field label="Quem está fechando" htmlFor="close-operator">
-            <Input
-              id="close-operator"
-              maxLength={60}
-              value={operator}
-              onChange={(e) => setOperator(e.target.value)}
-            />
-          </Field>
+          <ActingAs verb="Fechando" />
           <Field label="Observação (opcional)" htmlFor="close-notes">
             <Textarea
               id="close-notes"
@@ -618,6 +578,9 @@ function CloseResult({
 }
 
 function SessionTable({ session }: { session: CashSession }) {
+  // Caixa fechado sempre traz os totais (só o aberto é escondido de quem não é dono).
+  const { expected, received } = session;
+  if (!expected || !received) return null;
   return (
     <table className="w-full text-sm">
       <thead className="text-xs text-muted-foreground">
@@ -633,7 +596,7 @@ function SessionTable({ session }: { session: CashSession }) {
           <tr key={m}>
             <td className="py-2">{paymentMethodLabel[m]}</td>
             <td className="py-2 text-right tabular">
-              {formatCents(session.expected[m])}
+              {formatCents(expected[m])}
             </td>
             <td className="py-2 text-right tabular">
               {session.counted ? formatCents(session.counted[m]) : '—'}
@@ -650,7 +613,7 @@ function SessionTable({ session }: { session: CashSession }) {
         <tr>
           <td colSpan={4} className="pt-3">
             Dinheiro esperado = troco {formatCents(session.openingFloatCents)} +
-            recebido {formatCents(session.received.cash)} + suprimentos{' '}
+            recebido {formatCents(received.cash)} + suprimentos{' '}
             {formatCents(session.reinforcementsCents)} − sangrias{' '}
             {formatCents(session.withdrawalsCents)}
           </td>
